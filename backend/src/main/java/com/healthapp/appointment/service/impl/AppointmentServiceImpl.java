@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -85,27 +86,35 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("Slot start time must be aligned on 30-minute boundaries");
         }
 
-        // Check availability schedule
-        DayOfWeek day = request.getSlotStartTime().getDayOfWeek();
-        LocalTime slotTime = request.getSlotStartTime().toLocalTime();
+        // Validate that requested slot is in the list of available slots (timezone-safe check)
+        List<OffsetDateTime> availableSlots = getAvailableSlots(request.getDoctorId(), request.getSlotStartTime().toLocalDate());
+        boolean isAvailable = availableSlots.stream()
+                .anyMatch(slot -> slot.toInstant().equals(request.getSlotStartTime().toInstant()));
 
-        DoctorAvailability availability = availabilityRepository
-                .findByDoctorIdAndDayOfWeek(request.getDoctorId(), day)
-                .orElse(null);
+        if (!isAvailable) {
+            // Check why it's not available to throw the specific exception (ConflictException vs BadRequestException)
+            DayOfWeek day = request.getSlotStartTime().getDayOfWeek();
+            DoctorAvailability availability = availabilityRepository
+                    .findByDoctorIdAndDayOfWeek(request.getDoctorId(), day)
+                    .orElse(null);
 
-        LocalTime start = availability != null ? availability.getStartTime() : LocalTime.of(9, 0);
-        LocalTime end = availability != null ? availability.getEndTime() : LocalTime.of(17, 0);
+            if (availability == null) {
+                throw new BadRequestException("Doctor has no availability scheduled on this day");
+            }
 
-        if (slotTime.isBefore(start) || slotTime.plusMinutes(30).isAfter(end)) {
-            throw new BadRequestException("Slot is outside the doctor's available hours");
-        }
+            // Convert request time to UTC to align with slot generation comparison
+            OffsetDateTime utcSlot = request.getSlotStartTime().withOffsetSameInstant(ZoneOffset.UTC);
+            LocalTime utcSlotTime = utcSlot.toLocalTime();
 
-        // Check duplicate booking
-        boolean alreadyBooked = appointmentRepository.existsByDoctorIdAndSlotStartTimeAndStatusNot(
-                request.getDoctorId(), request.getSlotStartTime(), Appointment.AppointmentStatus.CANCELLED
-        );
-        if (alreadyBooked) {
-            throw new ConflictException("The selected slot is already booked");
+            LocalTime start = availability.getStartTime();
+            LocalTime end = availability.getEndTime();
+
+            if (utcSlotTime.isBefore(start) || utcSlotTime.plusMinutes(30).isAfter(end)) {
+                throw new BadRequestException("Slot is outside the doctor's available hours");
+            }
+
+            // If inside working hours, the slot must be already booked
+            throw new ConflictException("The selected slot is already booked. Please choose another slot.");
         }
 
         Appointment appointment = new Appointment();
@@ -181,8 +190,12 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .findByDoctorIdAndDayOfWeek(doctorId, day)
                 .orElse(null);
 
-        LocalTime start = availability != null ? availability.getStartTime() : LocalTime.of(9, 0);
-        LocalTime end = availability != null ? availability.getEndTime() : LocalTime.of(17, 0);
+        if (availability == null) {
+            return new ArrayList<>(); // Doctor has explicitly disabled availability for this day
+        }
+
+        LocalTime start = availability.getStartTime();
+        LocalTime end = availability.getEndTime();
 
         List<OffsetDateTime> allSlots = new ArrayList<>();
         LocalTime current = start;
@@ -197,14 +210,15 @@ public class AppointmentServiceImpl implements AppointmentService {
         List<Appointment> bookedAppointments = appointmentRepository
                 .findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(doctorId, startOfDay, endOfDay, Appointment.AppointmentStatus.CANCELLED);
 
-        Set<OffsetDateTime> bookedTimes = bookedAppointments.stream()
+        Set<Instant> bookedInstants = bookedAppointments.stream()
                 .map(Appointment::getSlotStartTime)
+                .map(OffsetDateTime::toInstant)
                 .collect(Collectors.toSet());
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         return allSlots.stream()
-                .filter(slot -> !bookedTimes.contains(slot))
+                .filter(slot -> !bookedInstants.contains(slot.toInstant()))
                 .filter(slot -> slot.isAfter(now))
                 .collect(Collectors.toList());
     }

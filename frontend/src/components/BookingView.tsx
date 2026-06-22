@@ -136,7 +136,7 @@ export const BookingView: React.FC = () => {
         },
         body: JSON.stringify({
           patientName,
-          patientEmail,
+          patientEmail: patientEmail.trim() || null,
           patientPhone,
           doctorId: selectedDoctorId,
           slotStartTime: selectedSlot
@@ -199,7 +199,7 @@ export const BookingView: React.FC = () => {
 
   const formatSlotTime = (isoString: string) => {
     const d = new Date(isoString);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
   };
 
   const activeDoctor = doctors.find(d => d.id === selectedDoctorId);
@@ -270,7 +270,7 @@ export const BookingView: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Time slot:</span>
               <strong>
-                {new Date(bookedAppointment.slotStartTime).toLocaleDateString()} at{' '}
+                {new Date(bookedAppointment.slotStartTime).toLocaleDateString([], { timeZone: 'UTC' })} at{' '}
                 {formatSlotTime(bookedAppointment.slotStartTime)}
               </strong>
             </div>
@@ -502,11 +502,10 @@ export const BookingView: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr md:1fr', gap: '1.25rem' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      Email Address
+                      Email Address (Optional)
                     </label>
                     <input
                       type="email"
-                      required
                       value={patientEmail}
                       onChange={(e) => setPatientEmail(e.target.value)}
                       placeholder="e.g. john@example.com"

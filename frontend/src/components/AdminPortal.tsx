@@ -1,24 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { LogIn, UserPlus, Key, UserCheck, Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { StatusBanner } from './StatusBanner';
 
 export const AdminPortal: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'appointments' | 'doctors'>('appointments');
   const [doctors, setDoctors] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-
-  // Auth Inputs
-  const [isRegisteringAdmin, setIsRegisteringAdmin] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [orgNameInput, setOrgNameInput] = useState('');
 
   // Doctor Provision Inputs
   const [docEmail, setDocEmail] = useState('');
@@ -37,16 +29,50 @@ export const AdminPortal: React.FC = () => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
 
-  // Sync token, role, and org info from URL
-  const token = searchParams.get('token') || '';
-  const role = searchParams.get('role') || '';
-  const orgName = searchParams.get('orgName') || '';
-  const orgSlug = searchParams.get('orgSlug') || '';
+  // Sync token, role, and org info from localStorage
+  const token = localStorage.getItem('medbook_token') || '';
+  const role = localStorage.getItem('medbook_role') || '';
+  const orgName = localStorage.getItem('medbook_orgName') || '';
+  const orgSlug = localStorage.getItem('medbook_orgSlug') || '';
+
+  // Tab state synced with URL parameters (for admins)
+  const activeTab = (searchParams.get('tab') as 'appointments' | 'doctors') || 'appointments';
+  const setActiveTab = (tab: 'appointments' | 'doctors') => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('tab', tab);
+    setSearchParams(newParams);
+  };
 
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
+
+  // Enforce authentication & role restrictions on mount
+  useEffect(() => {
+    const storedToken = localStorage.getItem('medbook_token');
+    const storedRole = localStorage.getItem('medbook_role');
+    if (!storedToken) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    const path = window.location.pathname;
+    if (path.startsWith('/admin') && storedRole !== 'ADMIN') {
+      navigate('/doctors', { replace: true });
+    } else if (path.startsWith('/doctors') && storedRole !== 'DOCTOR') {
+      navigate('/admin', { replace: true });
+    }
+  }, [navigate]);
+
+  // Sync tab search parameter for ADMIN dashboard
+  useEffect(() => {
+    if (token && role === 'ADMIN' && !searchParams.get('tab')) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set('tab', 'appointments');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [token, role, searchParams, setSearchParams]);
 
   // Run initial fetches if logged in
   useEffect(() => {
@@ -84,74 +110,6 @@ export const AdminPortal: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load doctors list', err);
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus('loading');
-    setStatusMsg('Authenticating credentials...');
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      if (!res.ok) throw new Error('Invalid email or password credentials');
-      
-      const data = await res.json();
-      // Set parameters in URL
-      const newParams = new URLSearchParams(searchParams);
-      newParams.set('token', data.token);
-      newParams.set('role', data.role);
-      newParams.set('orgName', data.orgName || '');
-      newParams.set('orgSlug', data.orgSlug || '');
-      setSearchParams(newParams);
-
-      setStatus('success');
-      setStatusMsg('Successfully authenticated!');
-      setEmail('');
-      setPassword('');
-    } catch (err: any) {
-      setStatus('error');
-      setStatusMsg(err.message || 'Login failed');
-    }
-  };
-
-  const handleRegisterAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus('loading');
-    setStatusMsg('Creating administrator and organisation...');
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, firstName, lastName, orgName: orgNameInput })
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Admin registration failed');
-      }
-      
-      const data = await res.json();
-      // Auto login
-      const newParams = new URLSearchParams(searchParams);
-      newParams.set('token', data.token);
-      newParams.set('role', data.role);
-      newParams.set('orgName', data.orgName || '');
-      newParams.set('orgSlug', data.orgSlug || '');
-      setSearchParams(newParams);
-
-      setStatus('success');
-      setStatusMsg('Organisation and admin account registered successfully!');
-      setEmail('');
-      setPassword('');
-      setFirstName('');
-      setLastName('');
-      setOrgNameInput('');
-    } catch (err: any) {
-      setStatus('error');
-      setStatusMsg(err.message || 'Registration failed');
     }
   };
 
@@ -212,14 +170,13 @@ export const AdminPortal: React.FC = () => {
   };
 
   const handleLogout = () => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('token');
-    newParams.delete('role');
-    newParams.delete('orgName');
-    newParams.delete('orgSlug');
-    setSearchParams(newParams);
+    localStorage.removeItem('medbook_token');
+    localStorage.removeItem('medbook_role');
+    localStorage.removeItem('medbook_orgName');
+    localStorage.removeItem('medbook_orgSlug');
     setAppointments([]);
     setDoctors([]);
+    navigate('/login', { replace: true });
   };
 
   // Availability Management
@@ -306,77 +263,8 @@ export const AdminPortal: React.FC = () => {
 
   if (!token) {
     return (
-      <div style={{ maxWidth: '450px', margin: '3rem auto 0 auto', animation: 'fadeIn 0.3s ease-out' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <span style={{ fontSize: '3rem' }}>🏥</span>
-          <h2 style={{ fontSize: '1.75rem', marginTop: '0.5rem', fontWeight: 800 }}>
-            {isRegisteringAdmin ? 'Register Organisation' : 'MedBook Portal Sign In'}
-          </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            {isRegisteringAdmin ? 'Create your SaaS clinic account' : 'Enter email and password to access dashboard'}
-          </p>
-        </div>
-
-        <StatusBanner status={status} message={statusMsg} />
-
-        <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}>
-          {isRegisteringAdmin ? (
-            <form onSubmit={handleRegisterAdmin}>
-              <div style={{ display: 'grid', gap: '1.25rem' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Organisation Name</label>
-                  <input type="text" required placeholder="e.g. Seattle Grace Hospital" value={orgNameInput} onChange={e => setOrgNameInput(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>First Name</label>
-                    <input type="text" required value={firstName} onChange={e => setFirstName(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Last Name</label>
-                    <input type="text" required value={lastName} onChange={e => setLastName(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Email Address</label>
-                  <input type="email" required placeholder="name@organisation.com" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Password</label>
-                  <input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                </div>
-                <button type="submit" style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <UserPlus size={18} /> Register Organisation
-                </button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin}>
-              <div style={{ display: 'grid', gap: '1.25rem' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Email Address</label>
-                  <input type="email" required placeholder="name@organisation.com" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.4rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Password</label>
-                  <input type="password" required value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: '0.85rem', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'white', outline: 'none' }} />
-                </div>
-                <button type="submit" style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <LogIn size={18} /> Sign In
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div style={{ textAlign: 'center', marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
-            <button
-              onClick={() => { setStatus('idle'); setStatusMsg(''); setIsRegisteringAdmin(!isRegisteringAdmin); }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }}
-            >
-              {isRegisteringAdmin ? 'Already have an account? Sign In' : 'Need to register a new Admin account?'}
-            </button>
-          </div>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div className="animate-spin" style={{ width: '40px', height: '40px', border: '4px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%' }}></div>
       </div>
     );
   }
@@ -658,8 +546,8 @@ export const AdminPortal: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <Clock size={14} style={{ color: 'var(--primary)' }} />
                           <span>
-                            {new Date(appt.slotStartTime).toLocaleDateString()} at{' '}
-                            {new Date(appt.slotStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(appt.slotStartTime).toLocaleDateString([], { timeZone: 'UTC' })} at{' '}
+                            {new Date(appt.slotStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                           </span>
                         </div>
                       </td>

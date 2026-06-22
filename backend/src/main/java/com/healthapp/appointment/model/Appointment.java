@@ -23,7 +23,7 @@ public class Appointment extends BaseEntity {
     @Column(name = "patient_name", nullable = false)
     private String patientName;
 
-    @Column(name = "patient_email", nullable = false)
+    @Column(name = "patient_email")
     private String patientEmail;
 
     @Column(name = "patient_phone", nullable = false)

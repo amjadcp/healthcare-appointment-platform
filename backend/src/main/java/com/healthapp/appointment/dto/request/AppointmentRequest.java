@@ -20,7 +20,6 @@ public class AppointmentRequest {
     @NotBlank(message = "Patient name is required")
     private String patientName;
 
-    @NotBlank(message = "Patient email is required")
     @Email(message = "Invalid email format")
     private String patientEmail;
 

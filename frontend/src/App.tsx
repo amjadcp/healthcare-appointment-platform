@@ -2,6 +2,8 @@ import React from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import { BookingView } from './components/BookingView';
 import { AdminPortal } from './components/AdminPortal';
+import { LoginView } from './components/LoginView';
+import { RegisterView } from './components/RegisterView';
 
 function App() {
   return (
@@ -10,8 +12,13 @@ function App() {
         {/* Patient Booking View for a specific organization */}
         <Route path="/o/:orgSlug" element={<BookingView />} />
 
-        {/* Admin/Doctor Portal */}
+        {/* Auth Paths */}
+        <Route path="/login" element={<LoginView />} />
+        <Route path="/register" element={<RegisterView />} />
+
+        {/* Admin & Doctor Portals */}
         <Route path="/admin" element={<AdminPortal />} />
+        <Route path="/doctors" element={<AdminPortal />} />
 
         {/* Default route: Landing page for MedBook SaaS */}
         <Route

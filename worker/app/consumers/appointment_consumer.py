@@ -124,14 +124,17 @@ class AppointmentConsumer:
                 slot_start = payload.get("slotStartTime")
                 
                 # Simulate Notification dispatch (structured log output)
-                notification_log = {
-                    "notification_type": "EMAIL",
-                    "recipient": email,
-                    "subject": "Appointment Booked Successfully",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "body": f"Dear Patient, your appointment with Doctor ({doctor_id}) is confirmed on {slot_start}."
-                }
-                logger.info(f"SIMULATED_NOTIFICATION: {json.dumps(notification_log)}")
+                if email:
+                    notification_log = {
+                        "notification_type": "EMAIL",
+                        "recipient": email,
+                        "subject": "Appointment Booked Successfully",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "body": f"Dear Patient, your appointment with Doctor ({doctor_id}) is confirmed on {slot_start}."
+                    }
+                    logger.info(f"SIMULATED_NOTIFICATION: {json.dumps(notification_log)}")
+                else:
+                    logger.info("Skipping email notification as no patient email was provided.")
 
                 # Write audit log status entry
                 log_entry = AppointmentLog(
@@ -149,14 +152,17 @@ class AppointmentConsumer:
                 reason = payload.get("reason", "No reason provided")
 
                 # Simulate Cancellation Notification
-                notification_log = {
-                    "notification_type": "EMAIL",
-                    "recipient": email,
-                    "subject": "Appointment Cancelled",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "body": f"Dear Patient, your appointment ({appointment_id}) has been cancelled by {cancelled_by}. Reason: {reason}."
-                }
-                logger.info(f"SIMULATED_NOTIFICATION: {json.dumps(notification_log)}")
+                if email:
+                    notification_log = {
+                        "notification_type": "EMAIL",
+                        "recipient": email,
+                        "subject": "Appointment Cancelled",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "body": f"Dear Patient, your appointment ({appointment_id}) has been cancelled by {cancelled_by}. Reason: {reason}."
+                    }
+                    logger.info(f"SIMULATED_NOTIFICATION: {json.dumps(notification_log)}")
+                else:
+                    logger.info("Skipping email notification as no patient email was provided.")
 
                 # Write audit log status entry
                 log_entry = AppointmentLog(

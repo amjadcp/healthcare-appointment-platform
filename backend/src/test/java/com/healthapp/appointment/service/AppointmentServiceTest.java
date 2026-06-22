@@ -3,8 +3,10 @@ package com.healthapp.appointment.service;
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.exception.ConflictException;
+import com.healthapp.appointment.exception.BadRequestException;
 import com.healthapp.appointment.mapper.AppointmentMapper;
 import com.healthapp.appointment.model.Appointment;
+import com.healthapp.appointment.model.DoctorAvailability;
 import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.AppointmentLogRepository;
 import com.healthapp.appointment.repository.AppointmentRepository;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
@@ -58,9 +61,14 @@ class AppointmentServiceTest {
     @InjectMocks
     private AppointmentServiceImpl appointmentService;
 
+    private DoctorAvailability defaultAvailability;
+
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        defaultAvailability = new DoctorAvailability();
+        defaultAvailability.setStartTime(LocalTime.of(9, 0));
+        defaultAvailability.setEndTime(LocalTime.of(17, 0));
     }
 
     @Test
@@ -70,16 +78,17 @@ class AppointmentServiceTest {
         doctor.setId(doctorId);
         doctor.setRole(User.Role.DOCTOR);
 
-        // A future slot aligned on a 30-min boundary
-        OffsetDateTime slotTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withMinute(0).withSecond(0).withNano(0);
+        // A future slot aligned on a 30-min boundary (e.g. 10:00 AM)
+        OffsetDateTime slotTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withHour(10).withMinute(0).withSecond(0).withNano(0);
 
         AppointmentRequest request = new AppointmentRequest(
                 "Patient Name", "patient@email.com", "+919999999999", doctorId, slotTime
         );
 
         when(userRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
-        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.empty()); // Defaults to 9-5
-        when(appointmentRepository.existsByDoctorIdAndSlotStartTimeAndStatusNot(eq(doctorId), eq(slotTime), any())).thenReturn(false);
+        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.of(defaultAvailability));
+        when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
+                .thenReturn(Collections.emptyList());
         when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(new AppointmentResponse(
                 UUID.randomUUID(), "Patient Name", "patient@email.com", "+919999999999", doctorId, "Dr. Jane Smith", slotTime, slotTime.plusMinutes(30), "CONFIRMED", "CASH", 0L
@@ -100,17 +109,47 @@ class AppointmentServiceTest {
         doctor.setId(doctorId);
         doctor.setRole(User.Role.DOCTOR);
 
-        OffsetDateTime slotTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withMinute(30).withSecond(0).withNano(0);
+        OffsetDateTime slotTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withHour(10).withMinute(30).withSecond(0).withNano(0);
+
+        AppointmentRequest request = new AppointmentRequest(
+                "Patient Name", "patient@email.com", "+919999999999", doctorId, slotTime
+        );
+
+        Appointment existing = new Appointment();
+        existing.setDoctor(doctor);
+        existing.setSlotStartTime(slotTime);
+        existing.setSlotEndTime(slotTime.plusMinutes(30));
+        existing.setStatus(Appointment.AppointmentStatus.CONFIRMED);
+
+        when(userRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.of(defaultAvailability));
+        when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
+                .thenReturn(List.of(existing));
+
+        assertThrows(ConflictException.class, () -> appointmentService.bookAppointment(request));
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void bookAppointment_outOfHoursSlot_throwsBadRequestException() {
+        UUID doctorId = UUID.randomUUID();
+        User doctor = new User();
+        doctor.setId(doctorId);
+        doctor.setRole(User.Role.DOCTOR);
+
+        // 8:00 AM is out of default 9:00 - 17:00 availability
+        OffsetDateTime slotTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withHour(8).withMinute(0).withSecond(0).withNano(0);
 
         AppointmentRequest request = new AppointmentRequest(
                 "Patient Name", "patient@email.com", "+919999999999", doctorId, slotTime
         );
 
         when(userRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
-        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.empty());
-        when(appointmentRepository.existsByDoctorIdAndSlotStartTimeAndStatusNot(eq(doctorId), eq(slotTime), any())).thenReturn(true);
+        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.of(defaultAvailability));
+        when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
+                .thenReturn(Collections.emptyList());
 
-        assertThrows(ConflictException.class, () -> appointmentService.bookAppointment(request));
+        assertThrows(BadRequestException.class, () -> appointmentService.bookAppointment(request));
         verify(appointmentRepository, never()).save(any(Appointment.class));
     }
 
@@ -155,7 +194,7 @@ class AppointmentServiceTest {
         LocalDate date = LocalDate.now().plusDays(2); // In the future, so none are filtered by past-time check
 
         when(userRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
-        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.empty()); // 9-5 defaults (16 slots of 30 mins)
+        when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.of(defaultAvailability));
         when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
                 .thenReturn(Collections.emptyList());
 
