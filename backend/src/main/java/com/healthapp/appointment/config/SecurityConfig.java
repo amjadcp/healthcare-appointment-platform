@@ -13,6 +13,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import com.healthapp.appointment.security.JwtAuthenticationFilter;
 
 import java.util.List;
 
@@ -20,6 +21,12 @@ import java.util.List;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -31,12 +38,14 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
-                .requestMatchers("/api/v1/slots/available").permitAll() // Publicly accessible for Calendly flow
-                // We'll configure specific endpoint rules with @PreAuthorize in the controllers
-                .anyRequest().permitAll() // Temporarily permit all while we build the APIs in Step 3
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/doctors", "/api/v1/doctors/*/availability").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/slots/available").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/appointments").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/v1/appointments/*").permitAll()
+                .anyRequest().authenticated()
             );
 
-        // TODO: Add JWT Token filter here during Step 2
+        http.addFilterBefore(jwtAuthenticationFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
