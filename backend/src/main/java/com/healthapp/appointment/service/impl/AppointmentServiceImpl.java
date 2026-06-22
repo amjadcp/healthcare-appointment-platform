@@ -223,7 +223,7 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         Page<Appointment> page;
         if (user.getRole() == User.Role.ADMIN) {
-            page = appointmentRepository.findAll(pageable);
+            page = appointmentRepository.findByDoctorOrganizationId(user.getOrganization().getId(), pageable);
         } else {
             page = appointmentRepository.findByDoctorId(user.getId(), pageable);
         }

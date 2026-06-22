@@ -23,4 +23,7 @@ public class RegisterRequest {
 
     @NotBlank(message = "Last name is required")
     private String lastName;
+
+    @NotBlank(message = "Organization name is required")
+    private String orgName;
 }

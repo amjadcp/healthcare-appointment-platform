@@ -7,6 +7,7 @@ import com.healthapp.appointment.dto.response.UserResponse;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.mapper.DoctorAvailabilityMapper;
 import com.healthapp.appointment.mapper.UserMapper;
+import com.healthapp.appointment.model.Organization;
 import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
@@ -15,7 +16,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.DayOfWeek;
@@ -70,6 +75,26 @@ class DoctorServiceTest {
         request.setDepartment("Cardiology");
         request.setDegrees("MD, FACC");
 
+        // Mock Authentication Context
+        Authentication authentication = Mockito.mock(Authentication.class);
+        SecurityContext securityContext = Mockito.mock(SecurityContext.class);
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        SecurityContextHolder.setContext(securityContext);
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getName()).thenReturn("admin@healthapp.com");
+
+        // Mock Admin User and Organization
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setName("Test Org");
+        org.setSlug("test-org");
+
+        User admin = new User();
+        admin.setEmail("admin@healthapp.com");
+        admin.setRole(User.Role.ADMIN);
+        admin.setOrganization(org);
+
+        when(userRepository.findByEmail("admin@healthapp.com")).thenReturn(Optional.of(admin));
         when(userRepository.findByEmail(request.getEmail())).thenReturn(Optional.empty());
         when(passwordEncoder.encode(request.getPassword())).thenReturn("hashed_password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {

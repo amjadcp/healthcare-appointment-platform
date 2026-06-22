@@ -7,13 +7,17 @@ import com.healthapp.appointment.dto.response.UserResponse;
 import com.healthapp.appointment.exception.BadRequestException;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.ResourceNotFoundException;
+import com.healthapp.appointment.exception.UnauthorizedException;
 import com.healthapp.appointment.mapper.DoctorAvailabilityMapper;
 import com.healthapp.appointment.mapper.UserMapper;
 import com.healthapp.appointment.model.DoctorAvailability;
+import com.healthapp.appointment.model.Organization;
 import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.service.DoctorService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +58,20 @@ public class DoctorServiceImpl implements DoctorService {
             throw new ConflictException("Email is already in use");
         }
 
+        // Get authenticated Admin to find their organization
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+        String adminEmail = auth.getName();
+        User admin = userRepository.findByEmail(adminEmail)
+                .orElseThrow(() -> new UnauthorizedException("Authenticated admin not found"));
+
+        Organization org = admin.getOrganization();
+        if (org == null) {
+            throw new BadRequestException("Admin is not associated with any organization");
+        }
+
         User doctor = new User();
         doctor.setEmail(request.getEmail());
         doctor.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -62,6 +80,7 @@ public class DoctorServiceImpl implements DoctorService {
         doctor.setLastName(request.getLastName());
         doctor.setDepartment(request.getDepartment());
         doctor.setDegrees(request.getDegrees());
+        doctor.setOrganization(org);
 
         User savedDoctor = userRepository.save(doctor);
 
@@ -93,6 +112,7 @@ public class DoctorServiceImpl implements DoctorService {
         // Delete old availabilities
         List<DoctorAvailability> oldAvailabilities = availabilityRepository.findByDoctorId(doctorId);
         availabilityRepository.deleteAll(oldAvailabilities);
+        availabilityRepository.flush(); // Force deletions to database before inserting new availabilities
 
         // Create new ones
         List<DoctorAvailability> newAvailabilities = request.stream().map(req -> {
@@ -113,10 +133,26 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponse> getAllDoctors() {
-        return userRepository.findByRole(User.Role.DOCTOR).stream()
-                .map(userMapper::toUserResponse)
-                .collect(Collectors.toList());
+    public List<UserResponse> getAllDoctors(String orgSlug) {
+        if (orgSlug != null && !orgSlug.trim().isEmpty()) {
+            return userRepository.findByRoleAndOrganizationSlug(User.Role.DOCTOR, orgSlug).stream()
+                    .map(userMapper::toUserResponse)
+                    .collect(Collectors.toList());
+        }
+
+        // If no orgSlug is provided, check if the current user is authenticated and filter by their organization.
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            User currentUser = userRepository.findByEmail(auth.getName()).orElse(null);
+            if (currentUser != null && currentUser.getOrganization() != null) {
+                return userRepository.findByRoleAndOrganizationId(User.Role.DOCTOR, currentUser.getOrganization().getId()).stream()
+                        .map(userMapper::toUserResponse)
+                        .collect(Collectors.toList());
+            }
+        }
+
+        // Return empty list if no context (anonymous call without org slug)
+        return new ArrayList<>();
     }
 
     @Override

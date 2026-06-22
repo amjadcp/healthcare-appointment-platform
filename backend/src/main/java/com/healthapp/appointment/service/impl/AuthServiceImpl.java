@@ -6,7 +6,9 @@ import com.healthapp.appointment.dto.response.AuthResponse;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.UnauthorizedException;
 import com.healthapp.appointment.mapper.UserMapper;
+import com.healthapp.appointment.model.Organization;
 import com.healthapp.appointment.model.User;
+import com.healthapp.appointment.repository.OrganizationRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.security.JwtUtils;
 import com.healthapp.appointment.service.AuthService;
@@ -18,16 +20,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
+    private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final UserMapper userMapper;
 
     public AuthServiceImpl(
             UserRepository userRepository,
+            OrganizationRepository organizationRepository,
             PasswordEncoder passwordEncoder,
             JwtUtils jwtUtils,
             UserMapper userMapper) {
         this.userRepository = userRepository;
+        this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.userMapper = userMapper;
@@ -40,12 +45,32 @@ public class AuthServiceImpl implements AuthService {
             throw new ConflictException("Email is already in use");
         }
 
+        // Clean organization name to form a slug
+        String slug = request.getOrgName().toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "") // Keep alphanumeric, spaces, and hyphens
+                .trim()
+                .replaceAll("\\s+", "-"); // Replace spaces with hyphens
+
+        if (slug.isEmpty()) {
+            throw new ConflictException("Invalid organization name");
+        }
+
+        if (organizationRepository.findBySlug(slug).isPresent()) {
+            throw new ConflictException("Organization name is already in use");
+        }
+
+        Organization org = new Organization();
+        org.setName(request.getOrgName());
+        org.setSlug(slug);
+        Organization savedOrg = organizationRepository.save(org);
+
         User user = new User();
         user.setEmail(request.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(User.Role.ADMIN);
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
+        user.setOrganization(savedOrg);
 
         User savedUser = userRepository.save(user);
         String token = jwtUtils.generateToken(savedUser.getEmail());

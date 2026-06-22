@@ -32,7 +32,9 @@ public class UserMapper {
             user.getEmail(),
             user.getRole().name(),
             user.getFirstName(),
-            user.getLastName()
+            user.getLastName(),
+            user.getOrganization() != null ? user.getOrganization().getName() : null,
+            user.getOrganization() != null ? user.getOrganization().getSlug() : null
         );
     }
 }

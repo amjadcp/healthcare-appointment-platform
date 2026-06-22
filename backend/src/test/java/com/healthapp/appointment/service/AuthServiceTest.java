@@ -6,7 +6,9 @@ import com.healthapp.appointment.dto.response.AuthResponse;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.UnauthorizedException;
 import com.healthapp.appointment.mapper.UserMapper;
+import com.healthapp.appointment.model.Organization;
 import com.healthapp.appointment.model.User;
+import com.healthapp.appointment.repository.OrganizationRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.security.JwtUtils;
 import com.healthapp.appointment.service.impl.AuthServiceImpl;
@@ -18,6 +20,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -33,6 +36,9 @@ class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private OrganizationRepository organizationRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -58,13 +64,21 @@ class AuthServiceTest {
         request.setPassword("password");
         request.setFirstName("John");
         request.setLastName("Doe");
+        request.setOrgName("Test Org");
+
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setName("Test Org");
+        org.setSlug("test-org");
 
         when(userRepository.findByEmail(request.getEmail())).thenReturn(Optional.empty());
+        when(organizationRepository.findBySlug("test-org")).thenReturn(Optional.empty());
+        when(organizationRepository.save(any(Organization.class))).thenReturn(org);
         when(passwordEncoder.encode(request.getPassword())).thenReturn("hashed_password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(jwtUtils.generateToken("admin@healthapp.com")).thenReturn("jwt_token");
         when(userMapper.toAuthResponse(any(User.class), eq("jwt_token")))
-                .thenReturn(new AuthResponse("jwt_token", "admin@healthapp.com", "ADMIN", "John", "Doe"));
+                .thenReturn(new AuthResponse("jwt_token", "admin@healthapp.com", "ADMIN", "John", "Doe", "Test Org", "test-org"));
 
         AuthResponse response = authService.registerAdmin(request);
 
@@ -72,12 +86,14 @@ class AuthServiceTest {
         assertEquals("jwt_token", response.getToken());
         assertEquals("admin@healthapp.com", response.getEmail());
         verify(userRepository, times(1)).save(any(User.class));
+        verify(organizationRepository, times(1)).save(any(Organization.class));
     }
 
     @Test
     void registerAdmin_emailExists_throwsConflictException() {
         RegisterRequest request = new RegisterRequest();
         request.setEmail("admin@healthapp.com");
+        request.setOrgName("Test Org");
 
         when(userRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(new User()));
 
@@ -99,7 +115,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches(request.getPassword(), "hashed_password")).thenReturn(true);
         when(jwtUtils.generateToken("admin@healthapp.com")).thenReturn("jwt_token");
         when(userMapper.toAuthResponse(user, "jwt_token"))
-                .thenReturn(new AuthResponse("jwt_token", "admin@healthapp.com", "ADMIN", "John", "Doe"));
+                .thenReturn(new AuthResponse("jwt_token", "admin@healthapp.com", "ADMIN", "John", "Doe", "Test Org", "test-org"));
 
         AuthResponse response = authService.login(request);
 

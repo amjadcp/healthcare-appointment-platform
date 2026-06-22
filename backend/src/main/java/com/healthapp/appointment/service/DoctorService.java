@@ -11,6 +11,6 @@ import java.util.UUID;
 public interface DoctorService {
     UserResponse provisionDoctor(DoctorProvisionRequest request);
     List<DoctorAvailabilityResponse> updateAvailability(UUID doctorId, List<AvailabilityUpdateRequest> request);
-    List<UserResponse> getAllDoctors();
+    List<UserResponse> getAllDoctors(String orgSlug);
     List<DoctorAvailabilityResponse> getDoctorAvailability(UUID doctorId);
 }

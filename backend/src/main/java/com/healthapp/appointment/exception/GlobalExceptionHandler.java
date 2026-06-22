@@ -65,10 +65,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(org.springframework.dao.DataIntegrityViolationException ex) {
         logger.error("Database integrity violation occurred: ", ex);
+        String message = "A database integrity conflict occurred.";
+        if (ex.getRootCause() != null && ex.getRootCause().getMessage().contains("uq_active_doctor_appointments")) {
+            message = "The selected slot is already booked. Please choose another slot.";
+        } else if (ex.getRootCause() != null && ex.getRootCause().getMessage().contains("uq_doctor_day")) {
+            message = "Doctor availability has a scheduling conflict.";
+        } else if (ex.getRootCause() != null && ex.getRootCause().getMessage().contains("users_email_key")) {
+            message = "Email is already in use.";
+        }
+        
         ErrorResponse response = new ErrorResponse(
             HttpStatus.CONFLICT.value(),
             "Conflict",
-            "The selected slot is already booked. Please choose another slot.",
+            message,
             LocalDateTime.now()
         );
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
