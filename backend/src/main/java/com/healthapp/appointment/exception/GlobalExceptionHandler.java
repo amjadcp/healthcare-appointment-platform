@@ -62,6 +62,18 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(org.springframework.dao.DataIntegrityViolationException ex) {
+        logger.error("Database integrity violation occurred: ", ex);
+        ErrorResponse response = new ErrorResponse(
+            HttpStatus.CONFLICT.value(),
+            "Conflict",
+            "The selected slot is already booked. Please choose another slot.",
+            LocalDateTime.now()
+        );
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
         logger.error("Unhandled exception occurred: ", ex);
