@@ -15,7 +15,10 @@ import com.healthapp.appointment.repository.AppointmentLogRepository;
 import com.healthapp.appointment.repository.AppointmentRepository;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
+import com.healthapp.appointment.event.LocalAppointmentCancelledEvent;
+import com.healthapp.appointment.event.LocalAppointmentCreatedEvent;
 import com.healthapp.appointment.service.AppointmentService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
@@ -42,18 +45,21 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentLogRepository logRepository;
     private final AppointmentMapper appointmentMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AppointmentServiceImpl(
             UserRepository userRepository,
             DoctorAvailabilityRepository availabilityRepository,
             AppointmentRepository appointmentRepository,
             AppointmentLogRepository logRepository,
-            AppointmentMapper appointmentMapper) {
+            AppointmentMapper appointmentMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.availabilityRepository = availabilityRepository;
         this.appointmentRepository = appointmentRepository;
         this.logRepository = logRepository;
         this.appointmentMapper = appointmentMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -121,6 +127,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setChangedBy("PATIENT");
         logRepository.save(log);
 
+        // Publish local transaction-aware event
+        eventPublisher.publishEvent(new LocalAppointmentCreatedEvent(savedAppointment));
+
         return appointmentMapper.toResponse(savedAppointment);
     }
 
@@ -152,6 +161,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setToStatus(Appointment.AppointmentStatus.CANCELLED);
         log.setChangedBy(cancelledBy);
         logRepository.save(log);
+
+        // Publish local transaction-aware event
+        eventPublisher.publishEvent(new LocalAppointmentCancelledEvent(appointment, cancelledBy, "User requested cancellation"));
     }
 
     @Override

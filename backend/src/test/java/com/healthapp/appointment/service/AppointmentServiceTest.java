@@ -52,6 +52,9 @@ class AppointmentServiceTest {
     @Mock
     private AppointmentMapper appointmentMapper;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private AppointmentServiceImpl appointmentService;
 
