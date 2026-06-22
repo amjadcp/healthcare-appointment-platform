@@ -1,0 +1,51 @@
+server:
+  port: ${BACKEND_PORT:8080}
+
+spring:
+  application:
+    name: appointment-backend
+  
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:appointment_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres_password}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    out-of-order: false
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: alpha
+
+# JWT Custom Properties
+app:
+  jwt:
+    secret: ${JWT_SECRET:super_secret_jwt_key_that_is_long_enough_to_be_secure_256_bits}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
