@@ -2,9 +2,11 @@ package com.healthapp.appointment.controller;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
+import com.healthapp.appointment.dto.response.DlqMessageResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
 import com.healthapp.appointment.model.ProcessedEvent;
 import com.healthapp.appointment.service.AppointmentService;
+import com.healthapp.appointment.service.DlqService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,9 +32,11 @@ import java.util.UUID;
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
+    private final DlqService dlqService;
 
-    public AppointmentController(AppointmentService appointmentService) {
+    public AppointmentController(AppointmentService appointmentService, DlqService dlqService) {
         this.appointmentService = appointmentService;
+        this.dlqService = dlqService;
     }
 
     @PostMapping("/appointments")
@@ -81,6 +85,25 @@ public class AppointmentController {
     public ResponseEntity<Page<ProcessedEvent>> getProcessedEvents(@PageableDefault(size = 20) Pageable pageable) {
         Page<ProcessedEvent> response = appointmentService.getProcessedEvents(pageable);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Peek at messages currently sitting in the Dead Letter Queue.
+     * Uses ackmode=ack_requeue_true — messages are NOT removed.
+     * Requires authentication (admin only — enforced in the service layer).
+     */
+    @GetMapping("/events/dlq")
+    public ResponseEntity<List<DlqMessageResponse>> getDlqMessages(
+            @RequestParam(defaultValue = "50") int count) {
+        List<DlqMessageResponse> messages = dlqService.peekDlqMessages(count);
+        return ResponseEntity.ok(messages);
+    }
+
+    /** Returns just the count of messages waiting in the DLQ (cheap head-check). */
+    @GetMapping("/events/dlq/count")
+    public ResponseEntity<java.util.Map<String, Long>> getDlqCount() {
+        long count = dlqService.getDlqMessageCount();
+        return ResponseEntity.ok(java.util.Map.of("count", count));
     }
 
     @GetMapping("/slots/available")

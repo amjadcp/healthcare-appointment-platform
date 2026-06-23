@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink, Check, Activity } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink, Check, Activity, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { StatusBanner } from './StatusBanner';
 
@@ -17,6 +17,11 @@ export const AdminPortal: React.FC = () => {
   const [eventsPage, setEventsPage] = useState(0);
   const [eventsTotalPages, setEventsTotalPages] = useState(0);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  // DLQ state variables
+  const [dlqMessages, setDlqMessages] = useState<any[]>([]);
+  const [dlqCount, setDlqCount] = useState<number>(0);
+  const [expandedDlq, setExpandedDlq] = useState<Record<number, boolean>>({});
 
   // Doctor Provision Inputs
   const [docEmail, setDocEmail] = useState('');
@@ -42,8 +47,8 @@ export const AdminPortal: React.FC = () => {
   const orgSlug = localStorage.getItem('medbook_orgSlug') || '';
 
   // Tab state synced with URL parameters (for admins)
-  const activeTab = (searchParams.get('tab') as 'appointments' | 'doctors' | 'events') || 'appointments';
-  const setActiveTab = (tab: 'appointments' | 'doctors' | 'events') => {
+  const activeTab = (searchParams.get('tab') as 'appointments' | 'doctors' | 'events' | 'dlq') || 'appointments';
+  const setActiveTab = (tab: 'appointments' | 'doctors' | 'events' | 'dlq') => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('tab', tab);
     setSearchParams(newParams);
@@ -87,9 +92,12 @@ export const AdminPortal: React.FC = () => {
         fetchAppointments(page);
       } else if (activeTab === 'events') {
         fetchEvents(eventsPage);
+      } else if (activeTab === 'dlq') {
+        fetchDlqMessages();
       }
       if (role === 'ADMIN') {
         fetchDoctors();
+        fetchDlqCount();
       }
     }
   }, [token, role, page, eventsPage, activeTab]);
@@ -142,6 +150,32 @@ export const AdminPortal: React.FC = () => {
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const fetchDlqMessages = async () => {
+    setStatus('loading');
+    setStatusMsg('Fetching Dead Letter Queue messages...');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/events/dlq?count=50`, { headers });
+      if (!res.ok) throw new Error('Could not retrieve DLQ messages');
+      const data = await res.json();
+      setDlqMessages(data);
+      setStatus('idle');
+      setStatusMsg('');
+    } catch (err: any) {
+      setStatus('error');
+      setStatusMsg(err.message || 'Error fetching DLQ messages');
+    }
+  };
+
+  const fetchDlqCount = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/events/dlq/count`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setDlqCount(data.count || 0);
+      }
+    } catch { /* silent */ }
   };
 
   const handleProvisionDoctor = async (e: React.FormEvent) => {
@@ -411,6 +445,37 @@ export const AdminPortal: React.FC = () => {
           >
             Event Logs
           </button>
+          <button
+            onClick={() => { setActiveTab('dlq'); fetchDlqMessages(); }}
+            style={{
+              padding: '0.75rem 1.5rem',
+              borderRadius: 'var(--radius-md)',
+              background: activeTab === 'dlq' ? 'rgba(239, 68, 68, 0.85)' : 'var(--bg-surface)',
+              border: `1px solid ${activeTab === 'dlq' ? 'var(--error)' : 'var(--border)'}`,
+              color: 'white',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all var(--transition-fast)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            <AlertTriangle size={15} />
+            Dead Letter Queue
+            {dlqCount > 0 && (
+              <span style={{
+                background: 'var(--error)',
+                color: 'white',
+                borderRadius: '50px',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                padding: '0.1rem 0.45rem',
+                minWidth: '18px',
+                textAlign: 'center'
+              }}>{dlqCount}</span>
+            )}
+          </button>
         </div>
       )}
 
@@ -418,7 +483,7 @@ export const AdminPortal: React.FC = () => {
       {editingDocId ? (
         <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}>
           <h3 style={{ fontSize: '1.35rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <CalendarRange style={{ color: 'var(--primary)' }} /> Edit Availability: Dr. {editingDocName}
+            <CalendarRange style={{ color: 'var(--primary)' }} /> Edit Availability: {editingDocName}
           </h3>
 
           <div style={{ display: 'grid', gap: '1rem', marginBottom: '2rem' }}>
@@ -549,7 +614,7 @@ export const AdminPortal: React.FC = () => {
                     }}
                   >
                     <div>
-                      <strong style={{ fontSize: '1.05rem', display: 'block' }}>Dr. {doc.firstName} {doc.lastName}</strong>
+                      <strong style={{ fontSize: '1.05rem', display: 'block' }}>{doc.firstName} {doc.lastName}</strong>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block' }}>{doc.department} | {doc.degrees}</span>
                       <span style={{ fontSize: '0.85rem', color: 'var(--primary)' }}>{doc.email}</span>
                     </div>
@@ -740,7 +805,7 @@ export const AdminPortal: React.FC = () => {
             </div>
           )}
         </div>
-      ) : (
+      ) : (activeTab === 'appointments' || role !== 'ADMIN') ? (
         /* Appointments Tab (or Doctor's only View) */
         <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -782,7 +847,7 @@ export const AdminPortal: React.FC = () => {
                           </span>
                         </div>
                       </td>
-                      {role === 'ADMIN' && <td style={{ padding: '1rem 0.5rem' }}>Dr. {appt.doctorName}</td>}
+                      {role === 'ADMIN' && <td style={{ padding: '1rem 0.5rem' }}> {appt.doctorName}</td>}
                       <td style={{ padding: '1rem 0.5rem' }}>
                         <span
                           style={{
@@ -885,6 +950,101 @@ export const AdminPortal: React.FC = () => {
               >
                 Next
               </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* DLQ Tab */}
+      {activeTab === 'dlq' && role === 'ADMIN' && !editingDocId && (
+        <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(239,68,68,0.4)', boxShadow: '0 0 0 1px rgba(239,68,68,0.1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle size={20} style={{ color: 'var(--error)' }} /> Dead Letter Queue
+            </h3>
+            <button
+              onClick={fetchDlqMessages}
+              style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'white', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+            >
+              ↻ Refresh
+            </button>
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+            Messages that failed processing after retries are routed here via RabbitMQ's native dead-lettering.
+            These messages are peeked (<strong>not consumed</strong>) — they remain in the queue.
+          </p>
+
+          {dlqMessages.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+              <AlertTriangle size={36} style={{ marginBottom: '1rem', opacity: 0.4 }} />
+              <p>No messages in the Dead Letter Queue. 🎉</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {dlqMessages.map((msg: any, idx: number) => {
+                const isExpanded = !!expandedDlq[idx];
+                const deaths: any[] = msg.deaths || [];
+                const firstDeath = deaths[0];
+                const payload = msg.payload || {};
+                const originalEvent = payload.originalEvent || payload;
+                const errorInfo = payload.error || null;
+                const eventType = originalEvent?.eventType || originalEvent?.event_type || msg.routingKey || 'UNKNOWN';
+                const reason = firstDeath?.reason || errorInfo?.reason || 'rejected';
+
+                return (
+                  <div key={idx} style={{
+                    background: 'var(--bg-base)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--error)', background: 'rgba(239,68,68,0.1)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                            FAILED
+                          </span>
+                          <strong style={{ fontSize: '0.95rem' }}>{eventType}</strong>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                          <span>📮 Queue: <code>{firstDeath?.queue || msg.exchange || '—'}</code></span>
+                          <span>💀 Reason: <code style={{ color: '#fbbf24' }}>{reason}</code></span>
+                          {firstDeath?.count && <span>🔁 Deaths: <strong>{firstDeath.count}</strong></span>}
+                          {firstDeath?.firstDeathAt && <span>🕒 First failed: {String(firstDeath.firstDeathAt)}</span>}
+                        </div>
+                        {errorInfo?.message && (
+                          <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: '#f87171', fontFamily: 'monospace' }}>
+                            ⚠ {errorInfo.message}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setExpandedDlq(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                        style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239,68,68,0.3)', color: 'white', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+                      >
+                        {isExpanded ? 'Hide' : 'Show'} Raw Payload
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div style={{ borderTop: '1px solid rgba(239,68,68,0.2)', padding: '1.25rem', background: 'rgba(0,0,0,0.2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Full Message Payload</span>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(JSON.stringify(msg.payload, null, 2)); alert('Copied!'); }}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}
+                          >
+                            <Copy size={12} /> Copy JSON
+                          </button>
+                        </div>
+                        <pre style={{ margin: 0, fontSize: '0.82rem', color: '#f87171', fontFamily: 'Consolas, Monaco, monospace', lineHeight: '1.4', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+                          {JSON.stringify(msg.payload, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -48,6 +48,11 @@ def handle_appointment_confirmed(payload: dict, db):
     slot_start     = payload.get("slotStartTime")
     payment_method = payload.get("paymentMethod", "CASH")
 
+    # --- SIMULATED FAILURE FOR DLQ DEMONSTRATION ---
+    if "dlq" in patient_name.lower() or "error" in patient_name.lower():
+        raise RuntimeError(f"Simulated processing crash for patient: {patient_name}!")
+    # -----------------------------------------------
+
     body = (
         f"Dear {patient_name}, your appointment with {doctor_name} at {org_name} "
         f"is confirmed on {slot_start}. Payment method: {payment_method}."
@@ -288,7 +293,15 @@ class AppointmentConsumer:
             routing_key=settings.dlq_routing_key,
         )
 
-        # Declare and bind all per-event queues
+        # Declare and bind all per-event queues with DLQ arguments.
+        # These arguments MUST match the Java QueueBuilder definitions in RabbitMQConfig.
+        # x-dead-letter-exchange: RabbitMQ routes nack'd/expired messages here automatically.
+        # x-message-ttl: Messages older than 1 hour are auto-expired into the DLQ.
+        dlq_args = {
+            "x-dead-letter-exchange":    settings.dlq_exchange,
+            "x-dead-letter-routing-key": settings.dlq_routing_key,
+            "x-message-ttl":             60 * 60 * 1000,  # 1 hour in ms
+        }
         queue_bindings = [
             (settings.queue_appointment_confirmed, "appointment.confirmed"),
             (settings.queue_appointment_cancelled, "appointment.cancelled"),
@@ -299,13 +312,13 @@ class AppointmentConsumer:
             (settings.queue_org_registered,         "organisation.registered"),
         ]
         for queue_name, routing_key in queue_bindings:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(queue=queue_name, durable=True, arguments=dlq_args)
             self.channel.queue_bind(
                 exchange=settings.exchange_name,
                 queue=queue_name,
                 routing_key=routing_key,
             )
-            logger.info("Bound queue '%s' → routing_key '%s'", queue_name, routing_key)
+            logger.info("Bound queue '%s' → routing_key '%s' (DLQ-enabled)", queue_name, routing_key)
 
         self.channel.basic_qos(prefetch_count=1)
         logger.info("RabbitMQ topology declared successfully.")
@@ -341,8 +354,21 @@ class AppointmentConsumer:
         if self.connection and not self.connection.is_closed:
             self.connection.close()
 
+    def _get_death_count(self, properties) -> int:
+        """Extract the x-death retry count from message headers (set by RabbitMQ on re-delivery)."""
+        headers = getattr(properties, "headers", None) or {}
+        x_death = headers.get("x-death", [])
+        if x_death:
+            return int(x_death[0].get("count", 1))
+        return 0
+
     def on_message(self, ch, method, properties, body):
-        logger.info("Received message from queue '%s': %s", method.routing_key, body[:200])
+        routing_key = method.routing_key
+        death_count = self._get_death_count(properties)
+        logger.info(
+            "Received message from queue '%s' (death_count=%d): %s",
+            routing_key, death_count, body[:200]
+        )
         db = SessionLocal()
         try:
             event      = json.loads(body.decode("utf-8"))
@@ -362,13 +388,14 @@ class AppointmentConsumer:
 
             # Dispatch to handler
             handler = EVENT_HANDLERS.get(event_type)
-            if handler:
-                handler(payload, db)
-            else:
+            if handler is None:
+                # Unknown event type: explicitly publish enriched metadata to DLQ, then ack.
                 logger.warning("Unknown event type '%s' — no handler registered. Routing to DLQ.", event_type)
-                self._send_to_dlq(ch, body, ValueError(f"Unknown event type: {event_type}"))
+                self._send_to_dlq(ch, body, ValueError(f"Unknown event type: {event_type}"), death_count)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
+
+            handler(payload, db)
 
             # Mark as processed
             org_slug = payload.get("orgSlug")
@@ -384,14 +411,26 @@ class AppointmentConsumer:
 
         except Exception as exc:
             db.rollback()
-            logger.exception("Error handling event: %s", exc)
-            self._send_to_dlq(ch, body, exc)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            logger.exception(
+                "Failed to process event from '%s' (death_count=%d): %s",
+                routing_key, death_count, exc
+            )
+            # basic_nack with requeue=False: RabbitMQ automatically routes the message
+            # to worker.dlq via the x-dead-letter-exchange queue argument.
+            # This is safer than manually publishing to the DLQ, because it is atomic
+            # — the message is never lost even if the worker crashes mid-handler.
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         finally:
             db.close()
 
-    def _send_to_dlq(self, ch, raw_body: bytes, error: Exception):
-        """Wrap the original message with error metadata and publish to DLQ."""
+    def _send_to_dlq(self, ch, raw_body: bytes, error: Exception, death_count: int = 0):
+        """
+        Explicitly publish an enriched wrapper message to the DLQ.
+        Used ONLY for the unknown-event-type case where basic_nack is not appropriate
+        (we never want to retry an event with no handler).
+        For all other failure cases, use basic_nack(requeue=False) and let
+        RabbitMQ route via the x-dead-letter-exchange queue argument.
+        """
         try:
             original = json.loads(raw_body.decode("utf-8"))
         except Exception:
@@ -402,7 +441,8 @@ class AppointmentConsumer:
             "error": {
                 "message": str(error),
                 "failedAt": datetime.now(timezone.utc).isoformat(),
-                "retryCount": 1,
+                "deathCount": death_count,
+                "reason": "NO_HANDLER",
             },
         }
         try:
@@ -412,6 +452,6 @@ class AppointmentConsumer:
                 body=json.dumps(dlq_message),
                 properties=pika.BasicProperties(delivery_mode=2),
             )
-            logger.info("Published failed event to DLQ (%s)", settings.dlq_queue)
+            logger.info("Explicitly published unknown-event to DLQ (%s)", settings.dlq_queue)
         except Exception as dlq_err:
             logger.error("Failed to publish to DLQ: %s", dlq_err)

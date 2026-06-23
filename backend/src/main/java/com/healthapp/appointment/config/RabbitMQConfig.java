@@ -3,6 +3,7 @@ package com.healthapp.appointment.config;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
@@ -39,6 +40,9 @@ public class RabbitMQConfig {
     public static final String DLQ_ROUTING_KEY  = "appointment.dlq";
     public static final String DLQ_QUEUE        = "worker.dlq";
 
+    /** Messages older than 1 hour in any queue are auto-expired into DLQ. */
+    private static final int MESSAGE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
     // ── Exchange beans ────────────────────────────────────────────────────────
     @Bean
     public TopicExchange appointmentExchange() {
@@ -50,15 +54,32 @@ public class RabbitMQConfig {
         return new DirectExchange(DLQ_EXCHANGE, true, false);
     }
 
+    // ── Queue builder helper ──────────────────────────────────────────────────
+
+    /**
+     * Creates a durable queue wired to the DLQ exchange.
+     * Any message that is nack'd (requeue=false) or exceeds MESSAGE_TTL_MS
+     * will be automatically routed by RabbitMQ to the DLQ without worker intervention.
+     */
+    private Queue mainQueue(String name) {
+        return QueueBuilder.durable(name)
+                .withArgument("x-dead-letter-exchange",    DLQ_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY)
+                .withArgument("x-message-ttl",             MESSAGE_TTL_MS)
+                .build();
+    }
+
     // ── Queue beans ───────────────────────────────────────────────────────────
-    @Bean public Queue queueConfirmed()           { return new Queue(QUEUE_CONFIRMED,            true); }
-    @Bean public Queue queueCancelled()           { return new Queue(QUEUE_CANCELLED,            true); }
-    @Bean public Queue queueCompleted()           { return new Queue(QUEUE_COMPLETED,            true); }
-    @Bean public Queue queueReservationReleased() { return new Queue(QUEUE_RESERVATION_RELEASED, true); }
-    @Bean public Queue queueDoctorProvisioned()   { return new Queue(QUEUE_DOCTOR_PROVISIONED,   true); }
-    @Bean public Queue queueAvailabilityUpdated() { return new Queue(QUEUE_AVAILABILITY_UPDATED, true); }
-    @Bean public Queue queueOrgRegistered()       { return new Queue(QUEUE_ORG_REGISTERED,       true); }
-    @Bean public Queue queueDlq()                 { return new Queue(DLQ_QUEUE,                  true); }
+    @Bean public Queue queueConfirmed()           { return mainQueue(QUEUE_CONFIRMED); }
+    @Bean public Queue queueCancelled()           { return mainQueue(QUEUE_CANCELLED); }
+    @Bean public Queue queueCompleted()           { return mainQueue(QUEUE_COMPLETED); }
+    @Bean public Queue queueReservationReleased() { return mainQueue(QUEUE_RESERVATION_RELEASED); }
+    @Bean public Queue queueDoctorProvisioned()   { return mainQueue(QUEUE_DOCTOR_PROVISIONED); }
+    @Bean public Queue queueAvailabilityUpdated() { return mainQueue(QUEUE_AVAILABILITY_UPDATED); }
+    @Bean public Queue queueOrgRegistered()       { return mainQueue(QUEUE_ORG_REGISTERED); }
+
+    /** The DLQ itself is a plain durable queue — no further dead-lettering. */
+    @Bean public Queue queueDlq()                 { return QueueBuilder.durable(DLQ_QUEUE).build(); }
 
     // ── Binding beans ─────────────────────────────────────────────────────────
     @Bean

@@ -37,6 +37,12 @@ spring:
           max-attempts: 3
           initial-interval: 1000ms
 
+# RabbitMQ Management API (for DLQ inspection)
+rabbitmq:
+  management:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_MGMT_PORT:15672}
+
 springdoc:
   api-docs:
     path: /api-docs

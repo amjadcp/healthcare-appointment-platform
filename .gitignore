@@ -53,3 +53,6 @@ Thumbs.db
 .env
 .env*.local
 *.pem
+
+# Database
+postgres_data/

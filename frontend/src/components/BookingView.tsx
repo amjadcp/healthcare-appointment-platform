@@ -396,7 +396,7 @@ export const BookingView: React.FC = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Doctor:</span>
-              <strong>Dr. {bookedAppointment.doctorName}</strong>
+              <strong> {bookedAppointment.doctorName}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Time slot:</span>
@@ -772,7 +772,7 @@ export const BookingView: React.FC = () => {
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Doctor:</span>
-                        <strong>Dr. {reservedAppointment.doctorName}</strong>
+                        <strong> {reservedAppointment.doctorName}</strong>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Time Slot:</span>
@@ -914,7 +914,7 @@ export const BookingView: React.FC = () => {
                     <option value="">-- Select a Doctor --</option>
                     {doctors.map((d) => (
                       <option key={d.id} value={d.id}>
-                        Dr. {d.firstName} {d.lastName} ({d.department})
+                         {d.firstName} {d.lastName} ({d.department})
                       </option>
                     ))}
                   </select>
