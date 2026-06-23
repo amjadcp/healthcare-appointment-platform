@@ -14,8 +14,8 @@ class DoctorConsumer(BaseConsumer):
     @property
     def queue_bindings(self) -> List[Tuple[str, str]]:
         return [
-            (settings.queue_doctor_provisioned,  "doctor.provisioned"),
-            (settings.queue_availability_updated, "doctor.availability.updated"),
+            (settings.queue_doctor_provisioned,  settings.routing_key_doctor_provisioned),
+            (settings.queue_availability_updated, settings.routing_key_availability_updated),
         ]
 
     @property

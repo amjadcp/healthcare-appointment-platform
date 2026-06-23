@@ -16,10 +16,10 @@ class AppointmentConsumer(BaseConsumer):
     @property
     def queue_bindings(self) -> List[Tuple[str, str]]:
         return [
-            (settings.queue_appointment_confirmed, "appointment.confirmed"),
-            (settings.queue_appointment_cancelled, "appointment.cancelled"),
-            (settings.queue_appointment_completed, "appointment.completed"),
-            (settings.queue_reservation_released,  "appointment.reservation.released"),
+            (settings.queue_appointment_confirmed, settings.routing_key_appointment_confirmed),
+            (settings.queue_appointment_cancelled, settings.routing_key_appointment_cancelled),
+            (settings.queue_appointment_completed, settings.routing_key_appointment_completed),
+            (settings.queue_reservation_released,  settings.routing_key_reservation_released),
         ]
 
     @property

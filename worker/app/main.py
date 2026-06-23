@@ -32,10 +32,11 @@ def run_consumer(consumer) -> None:
             break
         except Exception as exc:
             logger.warning(
-                "[%s] Connection lost, reconnecting in 5 seconds. Error: %s", name, exc
+                "[%s] Connection lost, reconnecting in %d seconds. Error: %s",
+                name, settings.reconnect_delay_seconds, exc
             )
             consumer.stop()
-            time.sleep(5)
+            time.sleep(settings.reconnect_delay_seconds)
 
 
 def main() -> None:

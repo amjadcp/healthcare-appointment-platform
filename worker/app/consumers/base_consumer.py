@@ -56,8 +56,8 @@ class BaseConsumer(abc.ABC):
                 host=settings.rabbitmq_host,
                 port=settings.rabbitmq_port,
                 credentials=credentials,
-                heartbeat=600,
-                blocked_connection_timeout=300,
+                heartbeat=settings.rabbitmq_heartbeat,
+                blocked_connection_timeout=settings.rabbitmq_blocked_connection_timeout,
             )
         )
         self.channel = self.connection.channel()
@@ -97,7 +97,7 @@ class BaseConsumer(abc.ABC):
         dlq_args = {
             "x-dead-letter-exchange":    settings.dlq_exchange,
             "x-dead-letter-routing-key": settings.dlq_routing_key,
-            "x-message-ttl":             60 * 60 * 1000,   # 1 hour in ms
+            "x-message-ttl":             settings.rabbitmq_message_ttl,
         }
         for queue_name, routing_key in self.queue_bindings:
             self.channel.queue_declare(queue=queue_name, durable=True, arguments=dlq_args)
@@ -111,7 +111,7 @@ class BaseConsumer(abc.ABC):
                 self._name, queue_name, routing_key,
             )
 
-        self.channel.basic_qos(prefetch_count=1)
+        self.channel.basic_qos(prefetch_count=settings.rabbitmq_prefetch_count)
         logger.info("[%s] Topology declared successfully.", self._name)
 
     def start_consuming(self) -> None:
@@ -209,7 +209,7 @@ class BaseConsumer(abc.ABC):
 
         if retry_count < settings.max_retries:
             retry_count += 1
-            delay_ms = 1000 * retry_count   # 1 s, 2 s, 3 s …
+            delay_ms = settings.retry_initial_interval_ms * retry_count   # e.g. 1 s, 2 s, 3 s …
             headers["x-retry-count"] = retry_count
             headers["x-last-error"]  = str(exc)
             headers["x-failed-at"]   = datetime.now(timezone.utc).isoformat()

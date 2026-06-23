@@ -17,7 +17,7 @@ public class RabbitMQConfig {
     // ── Exchange ─────────────────────────────────────────────────────────────
     public static final String EXCHANGE_NAME = "appointment.events";
 
-    // ── Routing keys (mirror docs/event-contracts.md §1.1) ───────────────────
+    // Routing keys
     public static final String ROUTING_KEY_CONFIRMED              = "appointment.confirmed";
     public static final String ROUTING_KEY_CANCELLED              = "appointment.cancelled";
     public static final String ROUTING_KEY_COMPLETED              = "appointment.completed";
@@ -26,7 +26,7 @@ public class RabbitMQConfig {
     public static final String ROUTING_KEY_AVAILABILITY_UPDATED   = "doctor.availability.updated";
     public static final String ROUTING_KEY_ORG_REGISTERED         = "organisation.registered";
 
-    // ── Dedicated queues ──────────────────────────────────────────────────────
+    // Dedicated Queues
     public static final String QUEUE_CONFIRMED            = "worker.appointment.confirmed";
     public static final String QUEUE_CANCELLED            = "worker.appointment.cancelled";
     public static final String QUEUE_COMPLETED            = "worker.appointment.completed";
@@ -35,19 +35,19 @@ public class RabbitMQConfig {
     public static final String QUEUE_AVAILABILITY_UPDATED = "worker.availability.updated";
     public static final String QUEUE_ORG_REGISTERED       = "worker.organisation.registered";
 
-    // ── DLQ ──────────────────────────────────────────────────────────────────
+    // Dead Letter Queue (DLQ)
     public static final String DLQ_EXCHANGE     = "appointment.dlq.exchange";
     public static final String DLQ_ROUTING_KEY  = "appointment.dlq";
     public static final String DLQ_QUEUE        = "worker.dlq";
 
-    // ── Retry ────────────────────────────────────────────────────────────────
+    // Retry
     public static final String RETRY_EXCHANGE   = "appointment.retry.exchange";
     public static final String RETRY_QUEUE      = "worker.retry.queue";
 
     /** Messages older than 1 hour in any queue are auto-expired into DLQ. */
     private static final int MESSAGE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-    // ── Exchange beans ────────────────────────────────────────────────────────
+    // Exchange beans
     @Bean
     public TopicExchange appointmentExchange() {
         return new TopicExchange(EXCHANGE_NAME, true, false);
