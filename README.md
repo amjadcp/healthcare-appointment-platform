@@ -329,6 +329,8 @@ healthcare-appointment-platform/
 │   └── vite.config.ts              # Bundler configuration
 │
 ├── docs/                           # Architectural & API Documentation
+│   ├── api-documentation.html      # OpenAPI HTML representation (Swagger UI export)
+│   ├── api-documentation.json      # OpenAPI 3.0 specification file in JSON format
 │   ├── event-contracts.md          # Canonical message contract definitions for RabbitMQ
 │   └── technical-specification.md  # Detailed system behavior and technical specs
 │
@@ -342,4 +344,6 @@ healthcare-appointment-platform/
 
 - **Frontend App**: [http://localhost:3000](http://localhost:3000)
 - **Backend API Docs (Swagger)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) *(Only available when running in **Development Mode**)*
+- **Offline API Documentation (HTML)**: [docs/api-documentation.html](docs/api-documentation.html) (or preview via [GitHub HTML Preview](https://htmlpreview.github.io/?https://github.com/amjadcp/healthcare-appointment-platform/blob/main/docs/api-documentation.html))
+- **Offline API Specification (JSON)**: [docs/api-documentation.json](docs/api-documentation.json)
 - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (User: `guest`, Pass: `guest`)
