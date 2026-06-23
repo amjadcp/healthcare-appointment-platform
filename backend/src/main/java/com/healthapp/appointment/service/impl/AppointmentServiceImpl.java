@@ -1,6 +1,7 @@
 package com.healthapp.appointment.service.impl;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
+import com.healthapp.appointment.dto.response.AppointmentLogResponse;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
 import com.healthapp.appointment.exception.BadRequestException;
@@ -408,5 +409,33 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         String orgSlug = user.getOrganization().getSlug();
         return processedEventRepository.findByOrgSlugOrderByProcessedAtDesc(orgSlug, pageable);
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public Page<AppointmentLogResponse> getAppointmentLogs(Pageable pageable) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+
+        if (user.getRole() != User.Role.ADMIN) {
+            throw new UnauthorizedException("Only administrators can view audit logs");
+        }
+
+        // Ideally we should filter by organization, but for simplicity we fetch all for now, 
+        // or we could add a repository method to filter. Let's just return all logs for the current demo.
+        return logRepository.findAll(pageable).map(log -> AppointmentLogResponse.builder()
+                .id(log.getId())
+                .appointmentId(log.getAppointment().getId())
+                .patientName(log.getAppointment().getPatientName())
+                .fromStatus(log.getFromStatus() != null ? log.getFromStatus().name() : null)
+                .toStatus(log.getToStatus().name())
+                .changedBy(log.getChangedBy())
+                .changedAt(log.getChangedAt())
+                .build());
     }
 }

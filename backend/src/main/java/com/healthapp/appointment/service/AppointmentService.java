@@ -1,6 +1,7 @@
 package com.healthapp.appointment.service;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
+import com.healthapp.appointment.dto.response.AppointmentLogResponse;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
 import com.healthapp.appointment.model.ProcessedEvent;
@@ -21,4 +22,5 @@ public interface AppointmentService {
     List<SlotResponse> getAvailableSlots(UUID doctorId, LocalDate date);
     Page<AppointmentResponse> getAppointments(Pageable pageable);
     Page<ProcessedEvent> getProcessedEvents(Pageable pageable);
+    Page<AppointmentLogResponse> getAppointmentLogs(Pageable pageable);
 }

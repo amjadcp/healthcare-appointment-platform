@@ -8,8 +8,9 @@ import { AppointmentsTab } from './admin/AppointmentsTab';
 import { DoctorsTab } from './admin/DoctorsTab';
 import { EventsTab } from './admin/EventsTab';
 import { DlqTab } from './admin/DlqTab';
+import { BusinessAuditTab } from './admin/BusinessAuditTab';
 
-type TabKey = 'appointments' | 'doctors' | 'events' | 'dlq';
+type TabKey = 'appointments' | 'doctors' | 'audit' | 'events' | 'dlq';
 
 export const AdminPortal: React.FC = () => {
   const navigate = useNavigate();
@@ -92,13 +93,16 @@ export const AdminPortal: React.FC = () => {
       {/* Tab Bar (ADMIN only) */}
       {role === USER_ROLES.ADMIN && (
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-          {(['appointments', 'doctors', 'events'] as TabKey[]).map((tab) => (
+          {(['appointments', 'doctors', 'audit', 'events'] as TabKey[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`tab-btn ${activeTab === tab ? 'tab-btn-active' : ''}`}
             >
-              {tab === 'appointments' ? 'Appointments' : tab === 'doctors' ? 'Manage Doctors' : 'Event Logs'}
+              {tab === 'appointments' ? 'Appointments' : 
+               tab === 'doctors' ? 'Manage Doctors' : 
+               tab === 'audit' ? 'Business Audit Trail' : 
+               'Debug Event Log'}
             </button>
           ))}
           <button
@@ -118,6 +122,7 @@ export const AdminPortal: React.FC = () => {
       {/* Tab Content */}
       {activeTab === 'dlq' && role === USER_ROLES.ADMIN && <DlqTab />}
       {activeTab === 'events' && role === USER_ROLES.ADMIN && <EventsTab orgName={orgName} />}
+      {activeTab === 'audit' && role === USER_ROLES.ADMIN && <BusinessAuditTab />}
       {activeTab === 'doctors' && role === USER_ROLES.ADMIN && <DoctorsTab />}
       {(activeTab === 'appointments' || role === USER_ROLES.DOCTOR) && <AppointmentsTab role={role ?? ''} />}
     </div>

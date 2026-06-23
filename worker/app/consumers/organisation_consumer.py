@@ -11,7 +11,7 @@ class OrganisationConsumer(BaseConsumer):
     @property
     def queue_bindings(self) -> List[Tuple[str, str]]:
         return [
-            (settings.queue_org_registered, "organisation.registered"),
+            (settings.queue_org_registered, settings.routing_key_org_registered),
         ]
 
     @property

@@ -66,6 +66,18 @@ export interface PaginatedResponse<T> {
   number: number;
 }
 
+// ─── Business Audit ────────────────────────────────────────────────────────────
+
+export interface AppointmentLog {
+  id: string;
+  appointmentId: string;
+  patientName: string;
+  fromStatus: string | null;
+  toStatus: string;
+  changedBy: string;
+  changedAt: string;
+}
+
 // ─── Events / DLQ ────────────────────────────────────────────────────────────
 
 export interface AppointmentEvent {

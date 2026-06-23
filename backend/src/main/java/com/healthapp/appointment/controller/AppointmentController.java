@@ -1,6 +1,7 @@
 package com.healthapp.appointment.controller;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
+import com.healthapp.appointment.dto.response.AppointmentLogResponse;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.dto.response.DlqMessageResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
@@ -86,6 +87,13 @@ public class AppointmentController {
     @GetMapping("/events")
     public ResponseEntity<Page<ProcessedEvent>> getProcessedEvents(@PageableDefault(size = 20) Pageable pageable) {
         Page<ProcessedEvent> response = appointmentService.getProcessedEvents(pageable);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/logs")
+    @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")
+    public ResponseEntity<Page<AppointmentLogResponse>> getAppointmentLogs(@PageableDefault(size = 20) Pageable pageable) {
+        Page<AppointmentLogResponse> response = appointmentService.getAppointmentLogs(pageable);
         return ResponseEntity.ok(response);
     }
 
