@@ -46,9 +46,11 @@ rabbitmq:
 springdoc:
   api-docs:
     path: /api-docs
+    enabled: false
   swagger-ui:
     path: /swagger-ui.html
     operationsSorter: alpha
+    enabled: false
 
 # JWT Custom Properties
 app:
