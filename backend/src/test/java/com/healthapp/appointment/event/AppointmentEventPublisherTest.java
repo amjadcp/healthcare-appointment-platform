@@ -35,7 +35,8 @@ class AppointmentEventPublisherTest {
     }
 
     @Test
-    void handleAppointmentCreated_publishesToRabbitMQ() {
+    @SuppressWarnings("unchecked")
+    void handleAppointmentConfirmed_publishesToRabbitMQ() {
         UUID doctorId = UUID.randomUUID();
         User doctor = new User();
         doctor.setId(doctorId);
@@ -49,31 +50,41 @@ class AppointmentEventPublisherTest {
         appointment.setStatus(Appointment.AppointmentStatus.CONFIRMED);
         appointment.setPatientEmail("patient@example.com");
         appointment.setPatientPhone("+919999999999");
+        appointment.setPaymentMethod("CASH");
 
-        LocalAppointmentCreatedEvent localEvent = new LocalAppointmentCreatedEvent(appointment);
+        LocalAppointmentCreatedEvent localEvent = new LocalAppointmentCreatedEvent(
+                appointment,
+                UUID.randomUUID().toString(),
+                "Test Clinic",
+                "test-clinic",
+                "Dr. Dave Smith"
+        );
 
-        eventPublisher.handleAppointmentCreated(localEvent);
+        eventPublisher.handleAppointmentConfirmed(localEvent);
 
         ArgumentCaptor<AppointmentEvent> eventCaptor = ArgumentCaptor.forClass(AppointmentEvent.class);
         verify(rabbitTemplate, times(1)).convertAndSend(
                 eq(RabbitMQConfig.EXCHANGE_NAME),
-                eq(RabbitMQConfig.ROUTING_KEY_CREATED),
+                eq(RabbitMQConfig.ROUTING_KEY_CONFIRMED),
                 eventCaptor.capture()
         );
 
         AppointmentEvent publishedEvent = eventCaptor.getValue();
         assertNotNull(publishedEvent);
-        assertEquals("APPOINTMENT_CREATED", publishedEvent.getEventType());
+        assertEquals("APPOINTMENT_CONFIRMED", publishedEvent.getEventType());
         assertNotNull(publishedEvent.getEventId());
 
-        AppointmentCreatedPayload payload = (AppointmentCreatedPayload) publishedEvent.getPayload();
+        AppointmentConfirmedPayload payload = (AppointmentConfirmedPayload) publishedEvent.getPayload();
         assertEquals(appointmentId, payload.getAppointmentId());
-        assertEquals(appointmentId, payload.getUserId()); // Anonymous mapping
         assertEquals(doctorId, payload.getDoctorId());
-        assertEquals("patient@example.com", payload.getUserEmail());
+        assertEquals("patient@example.com", payload.getPatientEmail());
+        assertEquals("Dr. Dave Smith", payload.getDoctorName());
+        assertEquals("Test Clinic", payload.getOrgName());
+        assertEquals("test-clinic", payload.getOrgSlug());
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void handleAppointmentCancelled_publishesToRabbitMQ() {
         UUID doctorId = UUID.randomUUID();
         User doctor = new User();
@@ -86,7 +97,14 @@ class AppointmentEventPublisherTest {
         appointment.setStatus(Appointment.AppointmentStatus.CANCELLED);
         appointment.setPatientEmail("patient@example.com");
 
-        LocalAppointmentCancelledEvent localEvent = new LocalAppointmentCancelledEvent(appointment, "PATIENT", "User request");
+        LocalAppointmentCancelledEvent localEvent = new LocalAppointmentCancelledEvent(
+                appointment,
+                "PATIENT",
+                "User request",
+                "Test Clinic",
+                "test-clinic",
+                "Dr. Dave Smith"
+        );
 
         eventPublisher.handleAppointmentCancelled(localEvent);
 

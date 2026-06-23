@@ -3,6 +3,7 @@ package com.healthapp.appointment.service;
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
+import com.healthapp.appointment.model.ProcessedEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -19,4 +20,5 @@ public interface AppointmentService {
     void cancelAppointment(UUID appointmentId);
     List<SlotResponse> getAvailableSlots(UUID doctorId, LocalDate date);
     Page<AppointmentResponse> getAppointments(Pageable pageable);
+    Page<ProcessedEvent> getProcessedEvents(Pageable pageable);
 }

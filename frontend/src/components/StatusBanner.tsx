@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface StatusBannerProps {
   status: 'idle' | 'loading' | 'success' | 'error';

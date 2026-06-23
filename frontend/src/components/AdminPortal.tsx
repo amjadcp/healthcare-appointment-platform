@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink, Check } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink, Check, Activity } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { StatusBanner } from './StatusBanner';
 
@@ -11,6 +11,12 @@ export const AdminPortal: React.FC = () => {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+
+  // Event state variables
+  const [events, setEvents] = useState<any[]>([]);
+  const [eventsPage, setEventsPage] = useState(0);
+  const [eventsTotalPages, setEventsTotalPages] = useState(0);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   // Doctor Provision Inputs
   const [docEmail, setDocEmail] = useState('');
@@ -36,8 +42,8 @@ export const AdminPortal: React.FC = () => {
   const orgSlug = localStorage.getItem('medbook_orgSlug') || '';
 
   // Tab state synced with URL parameters (for admins)
-  const activeTab = (searchParams.get('tab') as 'appointments' | 'doctors') || 'appointments';
-  const setActiveTab = (tab: 'appointments' | 'doctors') => {
+  const activeTab = (searchParams.get('tab') as 'appointments' | 'doctors' | 'events') || 'appointments';
+  const setActiveTab = (tab: 'appointments' | 'doctors' | 'events') => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('tab', tab);
     setSearchParams(newParams);
@@ -77,12 +83,16 @@ export const AdminPortal: React.FC = () => {
   // Run initial fetches if logged in
   useEffect(() => {
     if (token) {
-      fetchAppointments(page);
+      if (activeTab === 'appointments') {
+        fetchAppointments(page);
+      } else if (activeTab === 'events') {
+        fetchEvents(eventsPage);
+      }
       if (role === 'ADMIN') {
         fetchDoctors();
       }
     }
-  }, [token, role, page]);
+  }, [token, role, page, eventsPage, activeTab]);
 
   const fetchAppointments = async (pageNum = 0) => {
     setStatus('loading');
@@ -111,6 +121,27 @@ export const AdminPortal: React.FC = () => {
     } catch (err) {
       console.error('Failed to load doctors list', err);
     }
+  };
+
+  const fetchEvents = async (pageNum = 0) => {
+    setStatus('loading');
+    setStatusMsg('Loading event logs...');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/events?page=${pageNum}&size=10`, { headers });
+      if (!res.ok) throw new Error('Could not retrieve event logs');
+      const data = await res.json();
+      setEvents(data.content || []);
+      setEventsTotalPages(data.totalPages || 0);
+      setStatus('idle');
+      setStatusMsg('');
+    } catch (err: any) {
+      setStatus('error');
+      setStatusMsg(err.message || 'Error fetching event logs');
+    }
+  };
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleProvisionDoctor = async (e: React.FormEvent) => {
@@ -365,6 +396,21 @@ export const AdminPortal: React.FC = () => {
           >
             Manage Doctors
           </button>
+          <button
+            onClick={() => setActiveTab('events')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              borderRadius: 'var(--radius-md)',
+              background: activeTab === 'events' ? 'var(--primary)' : 'var(--bg-surface)',
+              border: `1px solid ${activeTab === 'events' ? 'var(--primary)' : 'var(--border)'}`,
+              color: 'white',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all var(--transition-fast)'
+            }}
+          >
+            Event Logs
+          </button>
         </div>
       )}
 
@@ -527,6 +573,172 @@ export const AdminPortal: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      ) : activeTab === 'events' && role === 'ADMIN' ? (
+        /* Event Logs Tab */
+        <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+          <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Activity size={20} style={{ color: 'var(--primary)' }} /> Worker Event Logs
+          </h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+            Real-time audit of asynchronous RabbitMQ message events processed by the worker service for your organisation.
+          </p>
+
+          {events.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem 0' }}>No events recorded yet.</p>
+          ) : (
+            <div style={{ overflowX: 'auto', marginBottom: '1.5rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Event ID / Type</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Source / Time</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Organisation Context</th>
+                    <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>Payload Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((evt) => {
+                    let parsed: any = {};
+                    try {
+                      parsed = JSON.parse(evt.payload || '{}');
+                    } catch (e) {
+                      console.error("Failed to parse event payload", e);
+                    }
+
+                    const innerPayload = parsed.payload || {};
+                    const oSlug = innerPayload.orgSlug || evt.orgSlug;
+                    const oName = innerPayload.orgName || orgName;
+                    const publicUrl = `/o/${oSlug}`;
+                    const isExpanded = !!expandedRows[evt.id];
+
+                    return (
+                      <React.Fragment key={evt.id}>
+                        <tr style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border)', fontSize: '0.95rem' }}>
+                          <td style={{ padding: '1rem 0.5rem' }}>
+                            <div>
+                              <strong style={{
+                                color:
+                                  evt.eventType.includes('CONFIRMED') ? '#34d399' :
+                                  evt.eventType.includes('CANCELLED') ? '#f87171' :
+                                  evt.eventType.includes('COMPLETED') ? '#60a5fa' :
+                                  evt.eventType.includes('RELEASED') ? '#fbbf24' : '#c084fc'
+                              }}>
+                                {evt.eventType}
+                              </strong>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '0.1rem' }}>
+                                {evt.id}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '1rem 0.5rem' }}>
+                            <div>
+                              <span>{parsed.source || 'backend'}</span>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                                {new Date(evt.processedAt).toLocaleString()}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '1rem 0.5rem' }}>
+                            <div>
+                              <span>{oName}</span>
+                              {oSlug && (
+                                <div style={{ marginTop: '0.2rem' }}>
+                                  <a
+                                    href={publicUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}
+                                  >
+                                    Public Booking Link <ExternalLink size={12} />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>
+                            <button
+                              onClick={() => toggleRow(evt.id)}
+                              style={{
+                                background: 'var(--bg-base)',
+                                border: '1px solid var(--border)',
+                                color: 'white',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                transition: 'all var(--transition-fast)'
+                              }}
+                            >
+                              {isExpanded ? 'Hide Payload' : 'Show Payload'}
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td colSpan={4} style={{ padding: '0 0.5rem 1rem 0.5rem' }}>
+                              <div style={{ background: 'var(--bg-base)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', overflowX: 'auto' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Pretty JSON Envelope</span>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
+                                      alert('Copied to clipboard!');
+                                    }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}
+                                  >
+                                    <Copy size={12} /> Copy JSON
+                                  </button>
+                                </div>
+                                <pre style={{ margin: 0, fontSize: '0.85rem', color: 'var(--primary)', fontFamily: 'Consolas, Monaco, monospace', lineHeight: '1.4', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+                                  {JSON.stringify(parsed, null, 2)}
+                                </pre>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination for Events */}
+          {eventsTotalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
+              <button
+                disabled={eventsPage === 0}
+                onClick={() => setEventsPage(eventsPage - 1)}
+                style={{
+                  background: 'var(--bg-base)',
+                  border: '1px solid var(--border)',
+                  color: eventsPage === 0 ? 'var(--text-muted)' : 'white',
+                  padding: '0.5rem 1rem',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: eventsPage === 0 ? 'default' : 'pointer'
+                }}
+              >
+                Previous
+              </button>
+              <span style={{ alignSelf: 'center', color: 'var(--text-muted)' }}>Page {eventsPage + 1} of {eventsTotalPages}</span>
+              <button
+                disabled={eventsPage >= eventsTotalPages - 1}
+                onClick={() => setEventsPage(eventsPage + 1)}
+                style={{
+                  background: 'var(--bg-base)',
+                  border: '1px solid var(--border)',
+                  color: eventsPage >= eventsTotalPages - 1 ? 'var(--text-muted)' : 'white',
+                  padding: '0.5rem 1rem',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: eventsPage >= eventsTotalPages - 1 ? 'default' : 'pointer'
+                }}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* Appointments Tab (or Doctor's only View) */

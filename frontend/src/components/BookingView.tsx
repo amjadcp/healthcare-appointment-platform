@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useParams, Link } from 'react-router-dom';
-import { Calendar, Clock, User, Mail, Phone, CreditCard, ChevronRight, Check, ArrowLeft } from 'lucide-react';
+import { useSearchParams, useParams } from 'react-router-dom';
+import { Clock, CreditCard, ChevronRight, Check } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { StatusBanner } from './StatusBanner';
 

@@ -3,6 +3,7 @@ package com.healthapp.appointment.controller;
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
 import com.healthapp.appointment.dto.response.SlotResponse;
+import com.healthapp.appointment.model.ProcessedEvent;
 import com.healthapp.appointment.service.AppointmentService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -73,6 +74,12 @@ public class AppointmentController {
     @GetMapping("/appointments")
     public ResponseEntity<Page<AppointmentResponse>> getAppointments(@PageableDefault(size = 20) Pageable pageable) {
         Page<AppointmentResponse> response = appointmentService.getAppointments(pageable);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/events")
+    public ResponseEntity<Page<ProcessedEvent>> getProcessedEvents(@PageableDefault(size = 20) Pageable pageable) {
+        Page<ProcessedEvent> response = appointmentService.getProcessedEvents(pageable);
         return ResponseEntity.ok(response);
     }
 

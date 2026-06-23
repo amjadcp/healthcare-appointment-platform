@@ -9,6 +9,8 @@ class ProcessedEvent(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True)
     event_type = Column(String(100), nullable=False)
+    payload = Column(String, nullable=True)
+    org_slug = Column(String(255), nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

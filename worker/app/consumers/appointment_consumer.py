@@ -371,7 +371,13 @@ class AppointmentConsumer:
                 return
 
             # Mark as processed
-            db.add(ProcessedEvent(id=event_id, event_type=event_type))
+            org_slug = payload.get("orgSlug")
+            db.add(ProcessedEvent(
+                id=event_id,
+                event_type=event_type,
+                org_slug=org_slug,
+                payload=body.decode("utf-8")
+            ))
             db.commit()
             logger.info("Successfully processed event %s (%s)", event_id, event_type)
             ch.basic_ack(delivery_tag=method.delivery_tag)

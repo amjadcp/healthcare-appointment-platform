@@ -12,10 +12,12 @@ import com.healthapp.appointment.model.Appointment;
 import com.healthapp.appointment.model.AppointmentLog;
 import com.healthapp.appointment.model.DoctorAvailability;
 import com.healthapp.appointment.model.Organization;
+import com.healthapp.appointment.model.ProcessedEvent;
 import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.AppointmentLogRepository;
 import com.healthapp.appointment.repository.AppointmentRepository;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
+import com.healthapp.appointment.repository.ProcessedEventRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.event.LocalAppointmentCancelledEvent;
 import com.healthapp.appointment.event.LocalAppointmentCompletedEvent;
@@ -51,6 +53,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final AppointmentLogRepository logRepository;
     private final AppointmentMapper appointmentMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProcessedEventRepository processedEventRepository;
 
     public AppointmentServiceImpl(
             UserRepository userRepository,
@@ -58,13 +61,15 @@ public class AppointmentServiceImpl implements AppointmentService {
             AppointmentRepository appointmentRepository,
             AppointmentLogRepository logRepository,
             AppointmentMapper appointmentMapper,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ProcessedEventRepository processedEventRepository) {
         this.userRepository = userRepository;
         this.availabilityRepository = availabilityRepository;
         this.appointmentRepository = appointmentRepository;
         this.logRepository = logRepository;
         this.appointmentMapper = appointmentMapper;
         this.eventPublisher = eventPublisher;
+        this.processedEventRepository = processedEventRepository;
     }
 
     @Override
@@ -383,5 +388,25 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
 
         return page.map(appointmentMapper::toResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ProcessedEvent> getProcessedEvents(Pageable pageable) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+
+        if (user.getRole() != User.Role.ADMIN) {
+            throw new UnauthorizedException("Only administrators can view event logs");
+        }
+
+        String orgSlug = user.getOrganization().getSlug();
+        return processedEventRepository.findByOrgSlugOrderByProcessedAtDesc(orgSlug, pageable);
     }
 }
