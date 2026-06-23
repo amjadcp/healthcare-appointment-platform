@@ -2,6 +2,7 @@ package com.healthapp.appointment.service;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
+import com.healthapp.appointment.dto.response.SlotResponse;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.BadRequestException;
 import com.healthapp.appointment.mapper.AppointmentMapper;
@@ -198,9 +199,13 @@ class AppointmentServiceTest {
         when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
                 .thenReturn(Collections.emptyList());
 
-        List<OffsetDateTime> slots = appointmentService.getAvailableSlots(doctorId, date);
+        List<SlotResponse> slots = appointmentService.getAvailableSlots(doctorId, date);
 
         assertNotNull(slots);
         assertEquals(16, slots.size()); // 9:00 AM to 5:00 PM has 16 slots (9:00, 9:30, ..., 16:30)
+        slots.forEach(slot -> {
+            org.junit.jupiter.api.Assertions.assertTrue(slot.isAvailable());
+            assertEquals("AVAILABLE", slot.getStatus());
+        });
     }
 }

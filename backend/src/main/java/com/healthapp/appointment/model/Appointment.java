@@ -46,6 +46,9 @@ public class Appointment extends BaseEntity {
     @Column(name = "payment_method", nullable = false)
     private String paymentMethod = "CASH";
 
+    @Column(name = "reserved_until")
+    private OffsetDateTime reservedUntil;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -54,6 +57,7 @@ public class Appointment extends BaseEntity {
         PENDING,
         CONFIRMED,
         CANCELLED,
-        COMPLETED
+        COMPLETED,
+        PENDING_PAYMENT
     }
 }

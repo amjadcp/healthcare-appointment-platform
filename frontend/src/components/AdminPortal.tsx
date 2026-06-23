@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, CalendarRange, LogOut, Copy, ExternalLink, Check } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { StatusBanner } from './StatusBanner';
 
@@ -166,6 +166,25 @@ export const AdminPortal: React.FC = () => {
     } catch (err: any) {
       setStatus('error');
       setStatusMsg(err.message || 'Cancellation failed');
+    }
+  };
+
+  const handleCompleteAppointment = async (id: string) => {
+    if (!window.confirm('Are you sure you want to mark this appointment as completed?')) return;
+    setStatus('loading');
+    setStatusMsg('Marking appointment as completed...');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/appointments/${id}/complete`, {
+        method: 'POST',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed to mark appointment as completed');
+      setStatus('success');
+      setStatusMsg('Appointment marked as completed.');
+      fetchAppointments(page);
+    } catch (err: any) {
+      setStatus('error');
+      setStatusMsg(err.message || 'Action failed');
     }
   };
 
@@ -559,8 +578,14 @@ export const AdminPortal: React.FC = () => {
                             borderRadius: '50px',
                             fontSize: '0.8rem',
                             fontWeight: 600,
-                            background: appt.status === 'CONFIRMED' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                            color: appt.status === 'CONFIRMED' ? '#34d399' : '#f87171'
+                            background: 
+                              appt.status === 'CONFIRMED' ? 'rgba(16, 185, 129, 0.15)' :
+                              appt.status === 'COMPLETED' ? 'rgba(59, 130, 246, 0.15)' :
+                              appt.status === 'CANCELLED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                            color: 
+                              appt.status === 'CONFIRMED' ? '#34d399' :
+                              appt.status === 'COMPLETED' ? '#60a5fa' :
+                              appt.status === 'CANCELLED' ? '#f87171' : '#fbbf24'
                           }}
                         >
                           {appt.status}
@@ -568,25 +593,46 @@ export const AdminPortal: React.FC = () => {
                       </td>
                       <td style={{ padding: '1rem 0.5rem', color: 'var(--accent)' }}>{appt.paymentMethod}</td>
                       <td style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>
-                        {appt.status !== 'CANCELLED' && (
-                          <button
-                            onClick={() => handleCancelAppointment(appt.id)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--error)',
-                              cursor: 'pointer',
-                              padding: '0.5rem',
-                              borderRadius: 'var(--radius-sm)',
-                              transition: 'background var(--transition-fast)'
-                            }}
-                            title="Cancel Appointment"
-                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                          {appt.status === 'CONFIRMED' && (
+                            <button
+                              onClick={() => handleCompleteAppointment(appt.id)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--success)',
+                                cursor: 'pointer',
+                                padding: '0.5rem',
+                                borderRadius: 'var(--radius-sm)',
+                                transition: 'background var(--transition-fast)'
+                              }}
+                              title="Mark as Completed"
+                              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                            >
+                              <Check size={16} />
+                            </button>
+                          )}
+                          {appt.status !== 'CANCELLED' && appt.status !== 'COMPLETED' && (
+                            <button
+                              onClick={() => handleCancelAppointment(appt.id)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--error)',
+                                cursor: 'pointer',
+                                padding: '0.5rem',
+                                borderRadius: 'var(--radius-sm)',
+                                transition: 'background var(--transition-fast)'
+                              }}
+                              title="Cancel Appointment"
+                              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

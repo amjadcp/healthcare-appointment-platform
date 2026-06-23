@@ -14,6 +14,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.healthapp.appointment.security.JwtAuthenticationFilter;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.List;
 
@@ -41,11 +42,14 @@ public class SecurityConfig {
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/doctors", "/api/v1/doctors/*/availability").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/slots/available").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/appointments").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/appointments/reserve").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/appointments/*/confirm-payment").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/appointments/*/release").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/v1/appointments/*").permitAll()
                 .anyRequest().authenticated()
-            );
+            )
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        http.addFilterBefore(jwtAuthenticationFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

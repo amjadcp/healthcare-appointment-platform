@@ -2,6 +2,7 @@ package com.healthapp.appointment.service.impl;
 
 import com.healthapp.appointment.dto.request.AppointmentRequest;
 import com.healthapp.appointment.dto.response.AppointmentResponse;
+import com.healthapp.appointment.dto.response.SlotResponse;
 import com.healthapp.appointment.exception.BadRequestException;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.ResourceNotFoundException;
@@ -73,6 +74,23 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("User is not a doctor");
         }
 
+        AppointmentResponse reservation = reserveAppointment(request);
+        return confirmAppointmentPayment(reservation.getId());
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse reserveAppointment(AppointmentRequest request) {
+        // Clean up expired reservations first
+        appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
+
+        User doctor = userRepository.findById(request.getDoctorId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found"));
+
+        if (doctor.getRole() != User.Role.DOCTOR) {
+            throw new BadRequestException("User is not a doctor");
+        }
+
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         if (request.getSlotStartTime().isBefore(now)) {
             throw new BadRequestException("Cannot book a slot in the past");
@@ -86,34 +104,21 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("Slot start time must be aligned on 30-minute boundaries");
         }
 
-        // Validate that requested slot is in the list of available slots (timezone-safe check)
-        List<OffsetDateTime> availableSlots = getAvailableSlots(request.getDoctorId(), request.getSlotStartTime().toLocalDate());
-        boolean isAvailable = availableSlots.stream()
-                .anyMatch(slot -> slot.toInstant().equals(request.getSlotStartTime().toInstant()));
+        // Validate that requested slot is in the list of available slots
+        List<SlotResponse> availableSlots = getAvailableSlots(request.getDoctorId(), request.getSlotStartTime().toLocalDate());
+        SlotResponse requestedSlot = availableSlots.stream()
+                .filter(slot -> slot.getSlotStartTime().toInstant().equals(request.getSlotStartTime().toInstant()))
+                .findFirst()
+                .orElse(null);
 
-        if (!isAvailable) {
-            // Check why it's not available to throw the specific exception (ConflictException vs BadRequestException)
-            DayOfWeek day = request.getSlotStartTime().getDayOfWeek();
-            DoctorAvailability availability = availabilityRepository
-                    .findByDoctorIdAndDayOfWeek(request.getDoctorId(), day)
-                    .orElse(null);
+        if (requestedSlot == null) {
+            throw new BadRequestException("Doctor has no availability scheduled on this day/time");
+        }
 
-            if (availability == null) {
-                throw new BadRequestException("Doctor has no availability scheduled on this day");
+        if (!requestedSlot.isAvailable()) {
+            if ("PENDING_PAYMENT".equals(requestedSlot.getStatus())) {
+                throw new ConflictException("The selected slot is temporarily held for payment. Please choose another slot or try again later.");
             }
-
-            // Convert request time to UTC to align with slot generation comparison
-            OffsetDateTime utcSlot = request.getSlotStartTime().withOffsetSameInstant(ZoneOffset.UTC);
-            LocalTime utcSlotTime = utcSlot.toLocalTime();
-
-            LocalTime start = availability.getStartTime();
-            LocalTime end = availability.getEndTime();
-
-            if (utcSlotTime.isBefore(start) || utcSlotTime.plusMinutes(30).isAfter(end)) {
-                throw new BadRequestException("Slot is outside the doctor's available hours");
-            }
-
-            // If inside working hours, the slot must be already booked
             throw new ConflictException("The selected slot is already booked. Please choose another slot.");
         }
 
@@ -124,7 +129,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setDoctor(doctor);
         appointment.setSlotStartTime(request.getSlotStartTime());
         appointment.setSlotEndTime(request.getSlotStartTime().plusMinutes(30));
-        appointment.setStatus(Appointment.AppointmentStatus.CONFIRMED);
+        appointment.setStatus(Appointment.AppointmentStatus.PENDING_PAYMENT);
+        appointment.setReservedUntil(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(30));
 
         Appointment savedAppointment = appointmentRepository.save(appointment);
 
@@ -132,6 +138,41 @@ public class AppointmentServiceImpl implements AppointmentService {
         AppointmentLog log = new AppointmentLog();
         log.setAppointment(savedAppointment);
         log.setFromStatus(null);
+        log.setToStatus(Appointment.AppointmentStatus.PENDING_PAYMENT);
+        log.setChangedBy("PATIENT");
+        logRepository.save(log);
+
+        return appointmentMapper.toResponse(savedAppointment);
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse confirmAppointmentPayment(UUID appointmentId) {
+        // Clean up expired reservations first
+        appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
+
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found"));
+
+        if (appointment.getStatus() != Appointment.AppointmentStatus.PENDING_PAYMENT) {
+            throw new BadRequestException("This appointment is not in PENDING_PAYMENT status");
+        }
+
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        if (appointment.getReservedUntil() != null && appointment.getReservedUntil().isBefore(now)) {
+            appointmentRepository.delete(appointment);
+            throw new ConflictException("Your reservation has expired. Please try booking the slot again.");
+        }
+
+        Appointment.AppointmentStatus previousStatus = appointment.getStatus();
+        appointment.setStatus(Appointment.AppointmentStatus.CONFIRMED);
+        appointment.setReservedUntil(null);
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+
+        // Audit Log
+        AppointmentLog log = new AppointmentLog();
+        log.setAppointment(savedAppointment);
+        log.setFromStatus(previousStatus);
         log.setToStatus(Appointment.AppointmentStatus.CONFIRMED);
         log.setChangedBy("PATIENT");
         logRepository.save(log);
@@ -140,6 +181,46 @@ public class AppointmentServiceImpl implements AppointmentService {
         eventPublisher.publishEvent(new LocalAppointmentCreatedEvent(savedAppointment));
 
         return appointmentMapper.toResponse(savedAppointment);
+    }
+
+    @Override
+    @Transactional
+    public void releaseAppointmentReservation(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElse(null);
+
+        if (appointment != null && appointment.getStatus() == Appointment.AppointmentStatus.PENDING_PAYMENT) {
+            appointmentRepository.delete(appointment);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void completeAppointment(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != Appointment.AppointmentStatus.CONFIRMED) {
+            throw new BadRequestException("Only CONFIRMED appointments can be marked as COMPLETED");
+        }
+
+        Appointment.AppointmentStatus previousStatus = appointment.getStatus();
+        appointment.setStatus(Appointment.AppointmentStatus.COMPLETED);
+        appointmentRepository.save(appointment);
+
+        String completedBy = "SYSTEM";
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            completedBy = auth.getName();
+        }
+
+        // Audit Log
+        AppointmentLog log = new AppointmentLog();
+        log.setAppointment(appointment);
+        log.setFromStatus(previousStatus);
+        log.setToStatus(Appointment.AppointmentStatus.COMPLETED);
+        log.setChangedBy(completedBy);
+        logRepository.save(log);
     }
 
     @Override
@@ -176,8 +257,11 @@ public class AppointmentServiceImpl implements AppointmentService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<OffsetDateTime> getAvailableSlots(UUID doctorId, LocalDate date) {
+    @Transactional
+    public List<SlotResponse> getAvailableSlots(UUID doctorId, LocalDate date) {
+        // Clean up expired reservations first
+        appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
+
         User doctor = userRepository.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Doctor not found"));
 
@@ -210,16 +294,32 @@ public class AppointmentServiceImpl implements AppointmentService {
         List<Appointment> bookedAppointments = appointmentRepository
                 .findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(doctorId, startOfDay, endOfDay, Appointment.AppointmentStatus.CANCELLED);
 
-        Set<Instant> bookedInstants = bookedAppointments.stream()
-                .map(Appointment::getSlotStartTime)
-                .map(OffsetDateTime::toInstant)
-                .collect(Collectors.toSet());
+        // Map booked slots by instant to check availability and status easily
+        java.util.Map<Instant, Appointment> bookedMap = bookedAppointments.stream()
+                .collect(Collectors.toMap(
+                        appt -> appt.getSlotStartTime().toInstant(),
+                        appt -> appt,
+                        (existing, replacement) -> existing
+                ));
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         return allSlots.stream()
-                .filter(slot -> !bookedInstants.contains(slot.toInstant()))
-                .filter(slot -> slot.isAfter(now))
+                .map(slot -> {
+                    Appointment booked = bookedMap.get(slot.toInstant());
+                    boolean available = true;
+                    String status = "AVAILABLE";
+
+                    if (slot.isBefore(now)) {
+                        available = false;
+                        status = "PAST";
+                    } else if (booked != null) {
+                        available = false;
+                        status = booked.getStatus().name();
+                    }
+
+                    return new SlotResponse(slot, available, status);
+                })
                 .collect(Collectors.toList());
     }
 
