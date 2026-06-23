@@ -36,9 +36,20 @@ class Settings(BaseSettings):
     queue_org_registered:        str = "worker.organisation.registered"
 
     model_config = SettingsConfigDict(
-        env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+        env_file=[
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+        ],
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
 settings = Settings()
+
+# Local development convenience: map docker service names to 127.0.0.1
+# if we are running outside of Docker (forces IPv4 to avoid Windows Docker Desktop IPv6 issues)
+if not os.path.exists("/.dockerenv"):
+    if settings.db_host == "postgres":
+        settings.db_host = "127.0.0.1"
+    if settings.rabbitmq_host == "rabbitmq":
+        settings.rabbitmq_host = "127.0.0.1"
