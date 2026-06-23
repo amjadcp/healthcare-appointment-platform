@@ -53,6 +53,7 @@ services:
       RABBITMQ_MGMT_PORT: ${RABBITMQ_MGMT_PORT}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
     depends_on:
       postgres:
         condition: service_healthy

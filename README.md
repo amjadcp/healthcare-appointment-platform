@@ -281,14 +281,19 @@ healthcare-appointment-platform/
 - Python 3.10+ (Optional, if running worker natively)
 
 ### Bootstrapping the Environment
-The easiest way to run the entire stack is via Docker Compose:
+The application can be run in either **Development Mode** (default) or **Production Mode** using Docker Compose. This is controlled by the `SPRING_PROFILES_ACTIVE` environment variable.
 
+#### Changing Modes
+Open the `.env` file located at the root of the project folder and change the `SPRING_PROFILES_ACTIVE` variable to switch between modes:
+- **Development (with API Docs):** Set `SPRING_PROFILES_ACTIVE=dev`
+- **Production (without API Docs):** Set `SPRING_PROFILES_ACTIVE=prod`
+
+Then simply start the containers:
 ```bash
-# Start all services, databases, and message brokers
 docker compose up --build
 ```
 
 ### Important URLs
 - **Frontend App**: [http://localhost:3000](http://localhost:3000)
-- **Backend API Docs (Swagger)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+- **Backend API Docs (Swagger)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) *(Only available when running in **Development Mode**)*
 - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (User: `guest`, Pass: `guest`)

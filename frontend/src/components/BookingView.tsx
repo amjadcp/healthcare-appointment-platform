@@ -249,7 +249,7 @@ export const BookingView: React.FC = () => {
           </div>
         </div>
 
-      {/* Payment Checkout State */}
+      /* Payment Checkout State */
       ) : reservedAppointment ? (
         <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
           <style>{`
@@ -387,7 +387,7 @@ export const BookingView: React.FC = () => {
           </div>
         </div>
 
-      {/* Initial Booking Form */}
+      /* Initial Booking Form */
       ) : (
         <div style={{ display: 'grid', gap: '2rem' }}>
           {/* Step 1: Doctor + Date */}
