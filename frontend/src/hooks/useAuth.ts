@@ -47,10 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuth({ token: null, role: null, orgName: '', orgSlug: '', isAuthenticated: false });
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ ...auth, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  return React.createElement(
+    AuthContext.Provider,
+    { value: { ...auth, login, logout } },
+    children
   );
 };
 
