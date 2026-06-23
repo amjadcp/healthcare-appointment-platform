@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     rabbitmq_user: str = "guest"
     rabbitmq_password: str = "guest"
 
+    # Application URLs
+    app_base_url: str = "https://app.example.com"
+    feedback_url: str = "https://feedback.example.com"
+
     # Exchange
     exchange_name: str = "appointment.events"
 

@@ -7,7 +7,7 @@ from app.db import Base
 class ProcessedEvent(Base):
     __tablename__ = "processed_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_type = Column(String(100), nullable=False)
     payload = Column(String, nullable=True)
     org_slug = Column(String(255), nullable=True)
