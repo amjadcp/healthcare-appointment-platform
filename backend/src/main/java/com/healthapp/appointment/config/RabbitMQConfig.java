@@ -40,6 +40,10 @@ public class RabbitMQConfig {
     public static final String DLQ_ROUTING_KEY  = "appointment.dlq";
     public static final String DLQ_QUEUE        = "worker.dlq";
 
+    // ── Retry ────────────────────────────────────────────────────────────────
+    public static final String RETRY_EXCHANGE   = "appointment.retry.exchange";
+    public static final String RETRY_QUEUE      = "worker.retry.queue";
+
     /** Messages older than 1 hour in any queue are auto-expired into DLQ. */
     private static final int MESSAGE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -52,6 +56,11 @@ public class RabbitMQConfig {
     @Bean
     public DirectExchange dlqExchange() {
         return new DirectExchange(DLQ_EXCHANGE, true, false);
+    }
+
+    @Bean
+    public TopicExchange retryExchange() {
+        return new TopicExchange(RETRY_EXCHANGE, true, false);
     }
 
     // ── Queue builder helper ──────────────────────────────────────────────────
@@ -80,6 +89,14 @@ public class RabbitMQConfig {
 
     /** The DLQ itself is a plain durable queue — no further dead-lettering. */
     @Bean public Queue queueDlq()                 { return QueueBuilder.durable(DLQ_QUEUE).build(); }
+
+    /** The Retry queue holds failed events temporarily then dead-letters back to main exchange. */
+    @Bean
+    public Queue queueRetry() {
+        return QueueBuilder.durable(RETRY_QUEUE)
+                .withArgument("x-dead-letter-exchange", EXCHANGE_NAME)
+                .build();
+    }
 
     // ── Binding beans ─────────────────────────────────────────────────────────
     @Bean
@@ -120,6 +137,11 @@ public class RabbitMQConfig {
     @Bean
     public Binding bindingDlq(DirectExchange dlqExchange) {
         return BindingBuilder.bind(queueDlq()).to(dlqExchange).with(DLQ_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding bindingRetry(TopicExchange retryExchange) {
+        return BindingBuilder.bind(queueRetry()).to(retryExchange).with("#");
     }
 
     // ── Message converter ─────────────────────────────────────────────────────

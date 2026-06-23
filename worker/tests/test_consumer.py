@@ -74,7 +74,7 @@ def test_on_message_idempotent_skip(mock_session_local, consumer):
     consumer.channel.basic_ack.assert_called_once_with(delivery_tag=1)
 
 @patch("app.consumers.appointment_consumer.SessionLocal")
-def test_on_message_dlq_on_error(mock_session_local, consumer):
+def test_on_message_retry_on_error(mock_session_local, consumer):
     mock_db = MagicMock()
     mock_session_local.return_value = mock_db
     
@@ -92,15 +92,57 @@ def test_on_message_dlq_on_error(mock_session_local, consumer):
 
     method = MagicMock()
     method.delivery_tag = 1
+    properties = MagicMock()
+    properties.headers = {}
     
-    # on_message catches exception internally and routes to DLQ
-    consumer.on_message(consumer.channel, method, MagicMock(), body)
+    # on_message catches exception internally and routes to retry queue
+    consumer.on_message(consumer.channel, method, properties, body)
 
     # Verify db transaction rolled back
     mock_db.rollback.assert_called_once()
     
-    # Verify DLQ publish was called
+    # Verify retry publish was called
     consumer.channel.basic_publish.assert_called_once()
+    publish_args = consumer.channel.basic_publish.call_args[1]
+    assert publish_args["exchange"] == "appointment.retry.exchange"
+    assert publish_args["properties"].headers["x-retry-count"] == 1
+    
+    # Verify original message acknowledged (removed from main queue)
+    consumer.channel.basic_ack.assert_called_once_with(delivery_tag=1)
+
+@patch("app.consumers.appointment_consumer.SessionLocal")
+def test_on_message_dlq_on_max_retries(mock_session_local, consumer):
+    mock_db = MagicMock()
+    mock_session_local.return_value = mock_db
+    
+    # Simulate DB error during query (throws exception)
+    mock_db.query.side_effect = Exception("DB Connection Lost")
+
+    event_body = {
+        "eventId": str(uuid.uuid4()),
+        "eventType": "APPOINTMENT_CREATED",
+        "payload": {
+            "appointmentId": str(uuid.uuid4())
+        }
+    }
+    body = json.dumps(event_body).encode("utf-8")
+
+    method = MagicMock()
+    method.delivery_tag = 1
+    properties = MagicMock()
+    properties.headers = {"x-retry-count": 3}
+    
+    # on_message catches exception internally and routes to DLQ since max_retries = 3
+    consumer.on_message(consumer.channel, method, properties, body)
+
+    # Verify db transaction rolled back
+    mock_db.rollback.assert_called_once()
+    
+    # Verify DLQ publish was called (routes to DLQ)
+    consumer.channel.basic_publish.assert_called_once()
+    publish_args = consumer.channel.basic_publish.call_args[1]
+    assert publish_args["exchange"] == "appointment.dlq.exchange"
+    assert publish_args["routing_key"] == "appointment.dlq"
     
     # Verify original message acknowledged (removed from main queue)
     consumer.channel.basic_ack.assert_called_once_with(delivery_tag=1)

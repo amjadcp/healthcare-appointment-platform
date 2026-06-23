@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     dlq_routing_key: str = "appointment.dlq"
     dlq_queue: str = "worker.dlq"
 
+    # Retry
+    retry_exchange: str = "appointment.retry.exchange"
+    retry_queue: str = "worker.retry.queue"
+    max_retries: int = 3
+
     # Per-event queues (matching event-contracts.md §7)
     queue_appointment_confirmed: str = "worker.appointment.confirmed"
     queue_appointment_cancelled: str = "worker.appointment.cancelled"

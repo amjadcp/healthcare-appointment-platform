@@ -16,6 +16,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.rabbitmq.client.GetResponse;
+import com.rabbitmq.client.AMQP;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -49,10 +52,12 @@ public class DlqServiceImpl implements DlqService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final RabbitTemplate rabbitTemplate;
 
-    public DlqServiceImpl() {
+    public DlqServiceImpl(RabbitTemplate rabbitTemplate) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     /** Build a Basic Auth header for the Management API. */
@@ -163,5 +168,190 @@ public class DlqServiceImpl implements DlqService {
         }
 
         return new DlqMessageResponse(position, exchange, routingKey, headers, payload, deaths);
+    }
+
+    @Override
+    public boolean reprocessMessage(String eventId) {
+        return rabbitTemplate.execute(channel -> {
+            boolean found = false;
+            long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
+            
+            for (long i = 0; i < messageCount; i++) {
+                GetResponse response = channel.basicGet(RabbitMQConfig.DLQ_QUEUE, false);
+                if (response == null) {
+                    break;
+                }
+                
+                byte[] body = response.getBody();
+                String bodyStr = new String(body, StandardCharsets.UTF_8);
+                String msgEventId = extractEventId(bodyStr);
+                
+                if (eventId.equals(msgEventId)) {
+                    // Reprocess: publish original event back to main topic exchange
+                    String originalEventJson = extractOriginalEventJson(bodyStr);
+                    String eventType = extractEventType(bodyStr);
+                    String routingKey = getRoutingKey(eventType);
+                    
+                    if (routingKey != null) {
+                        AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()
+                                .contentType("application/json")
+                                .deliveryMode(2) // persistent
+                                .build();
+                        channel.basicPublish(RabbitMQConfig.EXCHANGE_NAME, routingKey, props, originalEventJson.getBytes(StandardCharsets.UTF_8));
+                        logger.info("Reprocessed DLQ event {} to routing key {}", eventId, routingKey);
+                    } else {
+                        logger.warn("Could not determine routing key for event type {} of event {}", eventType, eventId);
+                    }
+                    
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                    found = true;
+                    // Keep scanning the rest of the queue to maintain the loop for non-targets,
+                    // but we will finish scanning the queue to rotate all other messages to tail.
+                } else {
+                    // Move message to the tail of the DLQ to inspect the next ones
+                    channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                }
+            }
+            return found;
+        });
+    }
+
+    @Override
+    public boolean dismissMessage(String eventId) {
+        return rabbitTemplate.execute(channel -> {
+            boolean found = false;
+            long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
+            
+            for (long i = 0; i < messageCount; i++) {
+                GetResponse response = channel.basicGet(RabbitMQConfig.DLQ_QUEUE, false);
+                if (response == null) {
+                    break;
+                }
+                
+                byte[] body = response.getBody();
+                String bodyStr = new String(body, StandardCharsets.UTF_8);
+                String msgEventId = extractEventId(bodyStr);
+                
+                if (eventId.equals(msgEventId)) {
+                    // Ack to remove from DLQ
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                    logger.info("Dismissed DLQ event {}", eventId);
+                    found = true;
+                } else {
+                    // Move to the tail
+                    channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                }
+            }
+            return found;
+        });
+    }
+
+    @Override
+    public void reprocessAll() {
+        rabbitTemplate.execute(channel -> {
+            long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
+            for (long i = 0; i < messageCount; i++) {
+                GetResponse response = channel.basicGet(RabbitMQConfig.DLQ_QUEUE, false);
+                if (response == null) {
+                    break;
+                }
+                
+                byte[] body = response.getBody();
+                String bodyStr = new String(body, StandardCharsets.UTF_8);
+                String originalEventJson = extractOriginalEventJson(bodyStr);
+                String eventType = extractEventType(bodyStr);
+                String routingKey = getRoutingKey(eventType);
+                
+                if (routingKey != null) {
+                    AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()
+                            .contentType("application/json")
+                            .deliveryMode(2)
+                            .build();
+                    channel.basicPublish(RabbitMQConfig.EXCHANGE_NAME, routingKey, props, originalEventJson.getBytes(StandardCharsets.UTF_8));
+                }
+                channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+            }
+            logger.info("Reprocessed all messages from DLQ");
+            return null;
+        });
+    }
+
+    @Override
+    public void dismissAll() {
+        rabbitTemplate.execute(channel -> {
+            channel.queuePurge(RabbitMQConfig.DLQ_QUEUE);
+            logger.info("Purged/Dismissed all DLQ messages");
+            return null;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseMessageBody(String bodyStr) {
+        try {
+            return objectMapper.readValue(bodyStr, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            logger.error("Failed to parse DLQ message body: {}", bodyStr, e);
+            return Map.of();
+        }
+    }
+
+    private String extractEventId(String bodyStr) {
+        Map<String, Object> map = parseMessageBody(bodyStr);
+        if (map.containsKey("originalEvent")) {
+            Object original = map.get("originalEvent");
+            if (original instanceof Map) {
+                return String.valueOf(((Map<String, Object>) original).get("eventId"));
+            }
+        }
+        return String.valueOf(map.get("eventId"));
+    }
+
+    private String extractEventType(String bodyStr) {
+        Map<String, Object> map = parseMessageBody(bodyStr);
+        if (map.containsKey("originalEvent")) {
+            Object original = map.get("originalEvent");
+            if (original instanceof Map) {
+                return String.valueOf(((Map<String, Object>) original).get("eventType"));
+            }
+        }
+        return String.valueOf(map.get("eventType"));
+    }
+
+    private String extractOriginalEventJson(String bodyStr) {
+        try {
+            Map<String, Object> map = parseMessageBody(bodyStr);
+            if (map.containsKey("originalEvent")) {
+                return objectMapper.writeValueAsString(map.get("originalEvent"));
+            }
+            return bodyStr;
+        } catch (Exception e) {
+            logger.error("Failed to write original event JSON", e);
+            return bodyStr;
+        }
+    }
+
+    private String getRoutingKey(String eventType) {
+        if (eventType == null) return null;
+        switch (eventType) {
+            case "APPOINTMENT_CONFIRMED":
+            case "APPOINTMENT_CREATED":
+                return RabbitMQConfig.ROUTING_KEY_CONFIRMED;
+            case "APPOINTMENT_CANCELLED":
+                return RabbitMQConfig.ROUTING_KEY_CANCELLED;
+            case "APPOINTMENT_COMPLETED":
+                return RabbitMQConfig.ROUTING_KEY_COMPLETED;
+            case "APPOINTMENT_RESERVATION_RELEASED":
+                return RabbitMQConfig.ROUTING_KEY_RESERVATION_RELEASED;
+            case "DOCTOR_PROVISIONED":
+                return RabbitMQConfig.ROUTING_KEY_DOCTOR_PROVISIONED;
+            case "DOCTOR_AVAILABILITY_UPDATED":
+                return RabbitMQConfig.ROUTING_KEY_AVAILABILITY_UPDATED;
+            case "ORGANISATION_REGISTERED":
+                return RabbitMQConfig.ROUTING_KEY_ORG_REGISTERED;
+            default:
+                return null;
+        }
     }
 }

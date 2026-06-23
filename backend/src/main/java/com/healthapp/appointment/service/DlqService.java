@@ -12,4 +12,16 @@ public interface DlqService {
 
     /** Returns the current message count in the DLQ queue. */
     long getDlqMessageCount();
+
+    /** Consumes DLQ, finds message by eventId, republishes original event to main topic exchange, and ACKs it. */
+    boolean reprocessMessage(String eventId);
+
+    /** Consumes DLQ, finds message by eventId, and ACKs (dismisses) it. */
+    boolean dismissMessage(String eventId);
+
+    /** Consumes all DLQ messages, republishing original events to main topic exchange. */
+    void reprocessAll();
+
+    /** Purges/Dismisses all messages in the DLQ queue. */
+    void dismissAll();
 }

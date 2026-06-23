@@ -293,6 +293,25 @@ class AppointmentConsumer:
             routing_key=settings.dlq_routing_key,
         )
 
+        # Declare retry exchange + queue
+        self.channel.exchange_declare(
+            exchange=settings.retry_exchange,
+            exchange_type="topic",
+            durable=True,
+        )
+        self.channel.queue_declare(
+            queue=settings.retry_queue,
+            durable=True,
+            arguments={
+                "x-dead-letter-exchange": settings.exchange_name,
+            }
+        )
+        self.channel.queue_bind(
+            exchange=settings.retry_exchange,
+            queue=settings.retry_queue,
+            routing_key="#",
+        )
+
         # Declare and bind all per-event queues with DLQ arguments.
         # These arguments MUST match the Java QueueBuilder definitions in RabbitMQConfig.
         # x-dead-letter-exchange: RabbitMQ routes nack'd/expired messages here automatically.
@@ -362,12 +381,17 @@ class AppointmentConsumer:
             return int(x_death[0].get("count", 1))
         return 0
 
+    def _get_retry_count(self, properties) -> int:
+        """Extract the custom retry count from message headers."""
+        headers = getattr(properties, "headers", None) or {}
+        return int(headers.get("x-retry-count", 0))
+
     def on_message(self, ch, method, properties, body):
         routing_key = method.routing_key
-        death_count = self._get_death_count(properties)
+        retry_count = self._get_retry_count(properties)
         logger.info(
-            "Received message from queue '%s' (death_count=%d): %s",
-            routing_key, death_count, body[:200]
+            "Received message from queue '%s' (retry_count=%d): %s",
+            routing_key, retry_count, body[:200]
         )
         db = SessionLocal()
         try:
@@ -391,7 +415,7 @@ class AppointmentConsumer:
             if handler is None:
                 # Unknown event type: explicitly publish enriched metadata to DLQ, then ack.
                 logger.warning("Unknown event type '%s' — no handler registered. Routing to DLQ.", event_type)
-                self._send_to_dlq(ch, body, ValueError(f"Unknown event type: {event_type}"), death_count)
+                self._send_to_dlq(ch, body, ValueError(f"Unknown event type: {event_type}"), retry_count)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
@@ -411,15 +435,43 @@ class AppointmentConsumer:
 
         except Exception as exc:
             db.rollback()
-            logger.exception(
-                "Failed to process event from '%s' (death_count=%d): %s",
-                routing_key, death_count, exc
-            )
-            # basic_nack with requeue=False: RabbitMQ automatically routes the message
-            # to worker.dlq via the x-dead-letter-exchange queue argument.
-            # This is safer than manually publishing to the DLQ, because it is atomic
-            # — the message is never lost even if the worker crashes mid-handler.
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            
+            headers = getattr(properties, "headers", None) or {}
+            # Copy headers to avoid mutating a shared object if any
+            headers = dict(headers)
+            
+            if retry_count < settings.max_retries:
+                retry_count += 1
+                delay_ms = 1000 * retry_count  # 1s, 2s, 3s
+                
+                headers["x-retry-count"] = retry_count
+                headers["x-last-error"] = str(exc)
+                headers["x-failed-at"] = datetime.now(timezone.utc).isoformat()
+                
+                logger.warning(
+                    "Failed to process event from '%s' (attempt %d/%d). Retrying in %d ms. Error: %s",
+                    routing_key, retry_count, settings.max_retries, delay_ms, exc
+                )
+                
+                retry_props = pika.BasicProperties(
+                    delivery_mode=2,
+                    headers=headers,
+                    expiration=str(delay_ms)
+                )
+                ch.basic_publish(
+                    exchange=settings.retry_exchange,
+                    routing_key=routing_key,
+                    body=body,
+                    properties=retry_props
+                )
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.error(
+                    "Max retries (%d) reached for event from '%s'. Routing to DLQ. Error: %s",
+                    settings.max_retries, routing_key, exc
+                )
+                self._send_to_dlq(ch, body, exc, retry_count)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
         finally:
             db.close()
 

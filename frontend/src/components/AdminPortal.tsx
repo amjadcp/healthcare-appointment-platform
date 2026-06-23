@@ -178,6 +178,58 @@ export const AdminPortal: React.FC = () => {
     } catch { /* silent */ }
   };
 
+  const handleReprocessMessage = async (eventId: string | null) => {
+    const isAll = eventId === null;
+    const confirmMsg = isAll 
+      ? 'Are you sure you want to reprocess ALL messages in the Dead Letter Queue?' 
+      : `Are you sure you want to reprocess message ${eventId}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setStatus('loading');
+    setStatusMsg(isAll ? 'Reprocessing all DLQ messages...' : `Reprocessing message ${eventId}...`);
+    try {
+      const url = isAll 
+        ? `${API_BASE_URL}/api/v1/events/dlq/reprocess` 
+        : `${API_BASE_URL}/api/v1/events/dlq/reprocess?eventId=${encodeURIComponent(eventId)}`;
+      const res = await fetch(url, { method: 'POST', headers });
+      if (!res.ok) throw new Error(isAll ? 'Failed to reprocess all messages' : `Failed to reprocess message ${eventId}`);
+      
+      setStatus('success');
+      setStatusMsg(isAll ? 'All messages sent for reprocessing!' : `Message ${eventId} successfully sent for reprocessing.`);
+      fetchDlqMessages();
+      fetchDlqCount();
+    } catch (err: any) {
+      setStatus('error');
+      setStatusMsg(err.message || 'Reprocessing failed');
+    }
+  };
+
+  const handleDismissMessage = async (eventId: string | null) => {
+    const isAll = eventId === null;
+    const confirmMsg = isAll 
+      ? 'WARNING: This will permanently delete ALL messages in the Dead Letter Queue! Are you sure?' 
+      : `Are you sure you want to dismiss (delete) message ${eventId}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setStatus('loading');
+    setStatusMsg(isAll ? 'Dismissing all DLQ messages...' : `Dismissing message ${eventId}...`);
+    try {
+      const url = isAll 
+        ? `${API_BASE_URL}/api/v1/events/dlq/dismiss` 
+        : `${API_BASE_URL}/api/v1/events/dlq/dismiss?eventId=${encodeURIComponent(eventId)}`;
+      const res = await fetch(url, { method: 'POST', headers });
+      if (!res.ok) throw new Error(isAll ? 'Failed to dismiss all messages' : `Failed to dismiss message ${eventId}`);
+      
+      setStatus('success');
+      setStatusMsg(isAll ? 'All DLQ messages dismissed.' : `Message ${eventId} successfully dismissed.`);
+      fetchDlqMessages();
+      fetchDlqCount();
+    } catch (err: any) {
+      setStatus('error');
+      setStatusMsg(err.message || 'Dismissal failed');
+    }
+  };
+
   const handleProvisionDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
@@ -958,16 +1010,34 @@ export const AdminPortal: React.FC = () => {
       {/* DLQ Tab */}
       {activeTab === 'dlq' && role === 'ADMIN' && !editingDocId && (
         <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(239,68,68,0.4)', boxShadow: '0 0 0 1px rgba(239,68,68,0.1)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
               <AlertTriangle size={20} style={{ color: 'var(--error)' }} /> Dead Letter Queue
             </h3>
-            <button
-              onClick={fetchDlqMessages}
-              style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'white', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
-            >
-              ↻ Refresh
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={fetchDlqMessages}
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'white', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                ↻ Refresh
+              </button>
+              {dlqMessages.length > 0 && (
+                <>
+                  <button
+                    onClick={() => handleReprocessMessage(null)}
+                    style={{ background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgb(245, 158, 11)', color: 'rgb(251, 191, 36)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+                  >
+                    🔁 Reprocess All
+                  </button>
+                  <button
+                    onClick={() => handleDismissMessage(null)}
+                    style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgb(239, 68, 68)', color: 'rgb(248, 113, 113)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+                  >
+                    ❌ Dismiss All
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
             Messages that failed processing after retries are routed here via RabbitMQ's native dead-lettering.
@@ -1018,12 +1088,42 @@ export const AdminPortal: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <button
-                        onClick={() => setExpandedDlq(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                        style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239,68,68,0.3)', color: 'white', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
-                      >
-                        {isExpanded ? 'Hide' : 'Show'} Raw Payload
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {eventType !== 'UNKNOWN' && (
+                          <button
+                            onClick={() => {
+                              const eId = originalEvent?.eventId || originalEvent?.event_id;
+                              if (eId) {
+                                handleReprocessMessage(eId);
+                              } else {
+                                alert('Could not find eventId in message payload.');
+                              }
+                            }}
+                            style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.4)', color: 'rgb(251, 191, 36)', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            🔁 Reprocess
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            const eId = originalEvent?.eventId || originalEvent?.event_id;
+                            if (eId) {
+                              handleDismissMessage(eId);
+                            } else {
+                              alert('Could not find eventId in message payload.');
+                            }
+                          }}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', color: 'rgb(248, 113, 113)', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+                        >
+                          ❌ Dismiss
+                        </button>
+                        <button
+                          onClick={() => setExpandedDlq(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                          style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239,68,68,0.3)', color: 'white', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}
+                        >
+                          {isExpanded ? 'Hide' : 'Show'} Raw Payload
+                        </button>
+                      </div>
                     </div>
 
                     {isExpanded && (

@@ -26,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.security.access.prepost.PreAuthorize;
+import com.healthapp.appointment.security.UserRole;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -93,6 +95,7 @@ public class AppointmentController {
      * Requires authentication (admin only — enforced in the service layer).
      */
     @GetMapping("/events/dlq")
+    @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")
     public ResponseEntity<List<DlqMessageResponse>> getDlqMessages(
             @RequestParam(defaultValue = "50") int count) {
         List<DlqMessageResponse> messages = dlqService.peekDlqMessages(count);
@@ -101,9 +104,44 @@ public class AppointmentController {
 
     /** Returns just the count of messages waiting in the DLQ (cheap head-check). */
     @GetMapping("/events/dlq/count")
+    @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")
     public ResponseEntity<java.util.Map<String, Long>> getDlqCount() {
         long count = dlqService.getDlqMessageCount();
         return ResponseEntity.ok(java.util.Map.of("count", count));
+    }
+
+    /** Reprocesses a specific message from DLQ by eventId, or all if no eventId specified. */
+    @PostMapping("/events/dlq/reprocess")
+    @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")
+    public ResponseEntity<Void> reprocessDlqMessages(@RequestParam(required = false) String eventId) {
+        if (eventId != null && !eventId.trim().isEmpty()) {
+            boolean success = dlqService.reprocessMessage(eventId);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } else {
+            dlqService.reprocessAll();
+            return ResponseEntity.ok().build();
+        }
+    }
+
+    /** Dismisses (purges) a specific message from DLQ by eventId, or all if no eventId specified. */
+    @PostMapping("/events/dlq/dismiss")
+    @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")
+    public ResponseEntity<Void> dismissDlqMessages(@RequestParam(required = false) String eventId) {
+        if (eventId != null && !eventId.trim().isEmpty()) {
+            boolean success = dlqService.dismissMessage(eventId);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } else {
+            dlqService.dismissAll();
+            return ResponseEntity.ok().build();
+        }
     }
 
     @GetMapping("/slots/available")
