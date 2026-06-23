@@ -18,27 +18,27 @@ class Settings(BaseSettings):
     feedback_url: str = "https://feedback.example.com"
 
     # Exchange
-    exchange_name: str = "appointment.events"
+    exchange_name: str = "appointment.exchange"
 
     # DLQ
     dlq_exchange: str = "appointment.dlq.exchange"
     dlq_routing_key: str = "appointment.dlq"
-    dlq_queue: str = "worker.dlq"
+    dlq_queue: str = "queue.appointment.dlq"
 
     # Retry
     retry_exchange: str = "appointment.retry.exchange"
-    retry_queue: str = "worker.retry.queue"
+    retry_queue: str = "queue.appointment.retry"
     max_retries: int = 3
     retry_initial_interval_ms: int = 1000
 
     # Dedicated Queues
-    queue_appointment_confirmed: str = "worker.appointment.confirmed"
-    queue_appointment_cancelled: str = "worker.appointment.cancelled"
-    queue_appointment_completed: str = "worker.appointment.completed"
-    queue_reservation_released:  str = "worker.reservation.released"
-    queue_doctor_provisioned:    str = "worker.doctor.provisioned"
-    queue_availability_updated:  str = "worker.availability.updated"
-    queue_org_registered:        str = "worker.organisation.registered"
+    queue_appointment_confirmed: str = "queue.appointment.confirmed"
+    queue_appointment_cancelled: str = "queue.appointment.cancelled"
+    queue_appointment_completed: str = "queue.appointment.completed"
+    queue_reservation_released:  str = "queue.appointment.reservation.released"
+    queue_doctor_provisioned:    str = "queue.doctor.provisioned"
+    queue_availability_updated:  str = "queue.doctor.availability.updated"
+    queue_org_registered:        str = "queue.organisation.registered"
 
     # Routing keys
     routing_key_appointment_confirmed: str = "appointment.confirmed"
