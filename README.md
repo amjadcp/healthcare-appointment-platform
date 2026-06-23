@@ -49,7 +49,30 @@ By breaking development into these phases, I ensure that:
 
 ---
 
-## 1. System Architecture
+## 1. Getting Started Locally
+
+### Prerequisites
+- Docker & Docker Compose
+- Java 17+ (Optional, if running backend natively)
+- Node.js 18+ (Optional, if running frontend natively)
+- Python 3.10+ (Optional, if running worker natively)
+
+### Bootstrapping the Environment
+The application can be run in either **Development Mode** (default) or **Production Mode** using Docker Compose. This is controlled by the `SPRING_PROFILES_ACTIVE` environment variable.
+
+#### Changing Modes
+Open the `.env` file located at the root of the project folder and change the `SPRING_PROFILES_ACTIVE` variable to switch between modes:
+- **Development (with API Docs):** Set `SPRING_PROFILES_ACTIVE=dev`
+- **Production (without API Docs):** Set `SPRING_PROFILES_ACTIVE=prod`
+
+Then simply start the containers:
+```bash
+docker compose up --build
+```
+
+---
+
+## 2. System Architecture
 
 MedBook is built as a microservices-oriented monorepo consisting of three core components communicating asynchronously. 
 
@@ -139,7 +162,7 @@ flowchart TD
 
 ---
 
-## 2. Data Flow Diagram (Booking Process)
+## 3. Data Flow Diagram (Booking Process)
 
 The following sequence demonstrates the event-driven data flow when a patient books an appointment. Note how the HTTP request completes quickly, while side effects happen asynchronously.
 
@@ -179,7 +202,7 @@ sequenceDiagram
 
 ---
 
-## 3. Database Design
+## 4. Database Design
 
 The relational database is designed to enforce data integrity at the schema level. We use PostgreSQL to manage Users, Appointments, and outbox/processed event logs.
 
@@ -257,7 +280,7 @@ erDiagram
 
 ---
 
-## 4. Folder Structure & Purpose
+## 5. Folder Structure & Purpose
 
 The monorepo is divided into clear boundaries. Below is the directory structure and the specific purpose of each folder.
 
@@ -315,28 +338,8 @@ healthcare-appointment-platform/
 
 ---
 
-## 5. Getting Started Locally
+## Reference Sheet: Important URLs & Profiles
 
-### Prerequisites
-- Docker & Docker Compose
-- Java 17+ (Optional, if running backend natively)
-- Node.js 18+ (Optional, if running frontend natively)
-- Python 3.10+ (Optional, if running worker natively)
-
-### Bootstrapping the Environment
-The application can be run in either **Development Mode** (default) or **Production Mode** using Docker Compose. This is controlled by the `SPRING_PROFILES_ACTIVE` environment variable.
-
-#### Changing Modes
-Open the `.env` file located at the root of the project folder and change the `SPRING_PROFILES_ACTIVE` variable to switch between modes:
-- **Development (with API Docs):** Set `SPRING_PROFILES_ACTIVE=dev`
-- **Production (without API Docs):** Set `SPRING_PROFILES_ACTIVE=prod`
-
-Then simply start the containers:
-```bash
-docker compose up --build
-```
-
-### Important URLs
 - **Frontend App**: [http://localhost:3000](http://localhost:3000)
 - **Backend API Docs (Swagger)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) *(Only available when running in **Development Mode**)*
 - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (User: `guest`, Pass: `guest`)
