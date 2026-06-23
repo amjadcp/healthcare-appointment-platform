@@ -99,6 +99,7 @@ public class RabbitMQConfig {
 
     @Bean
     public Binding bindingCancelled(TopicExchange appointmentExchange) {
+        return BindingBuilder.bind(queueCancelled()).to(appointmentExchange).with(ROUTING_KEY_CANCELLED);
     }
 
     @Bean
