@@ -19,13 +19,9 @@ logger = logging.getLogger("worker.handlers.appointment")
 
 
 def handle_appointment_confirmed(payload_dict: dict, db: Session) -> None:
-    """2.1 APPOINTMENT_CONFIRMED — Send confirmation notification."""
-    payload = AppointmentConfirmedPayload(**payload_dict)
-
-    # --- SIMULATED FAILURE FOR DLQ DEMONSTRATION ---
+    # Simulate processing crash for DLQ demonstration
     if "dlq" in payload.patientName.lower() or "error" in payload.patientName.lower():
         raise RuntimeError(f"Simulated processing crash for patient: {payload.patientName}!")
-    # -----------------------------------------------
 
     body = (
         f"Dear {payload.patientName}, your appointment with {payload.doctorName} at {payload.orgName} "
@@ -45,7 +41,6 @@ def handle_appointment_confirmed(payload_dict: dict, db: Session) -> None:
 
 
 def handle_appointment_cancelled(payload_dict: dict, db: Session) -> None:
-    """2.2 APPOINTMENT_CANCELLED — Send cancellation notification."""
     payload = AppointmentCancelledPayload(**payload_dict)
 
     body = (
@@ -66,7 +61,6 @@ def handle_appointment_cancelled(payload_dict: dict, db: Session) -> None:
 
 
 def handle_appointment_completed(payload_dict: dict, db: Session) -> None:
-    """2.3 APPOINTMENT_COMPLETED — Send post-visit feedback request."""
     payload = AppointmentCompletedPayload(**payload_dict)
 
     feedback_body = (
@@ -90,10 +84,9 @@ def handle_appointment_completed(payload_dict: dict, db: Session) -> None:
 
 
 def handle_reservation_released(payload_dict: dict, db: Session) -> None:
-    """2.4 APPOINTMENT_RESERVATION_RELEASED — Log abandonment metric."""
     payload = ReservationReleasedPayload(**payload_dict)
 
-    # Mimicked: in a real system this would write to an analytics/metrics store
+    # Mimic writing to an analytics/metrics store
     abandonment_metric = {
         "metric": "slot_reservation_abandoned",
         "appointmentId": payload.appointmentId,

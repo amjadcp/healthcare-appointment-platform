@@ -37,11 +37,11 @@ public class AuthServiceImpl implements AuthService {
             throw new ConflictException("Email is already in use");
         }
 
-        // Clean organization name to form a slug
+        // Generate a URL-safe org slug
         String slug = request.getOrgName().toLowerCase()
-                .replaceAll("[^a-z0-9\\s-]", "") // Keep alphanumeric, spaces, and hyphens
+                .replaceAll("[^a-z0-9\\s-]", "")
                 .trim()
-                .replaceAll("\\s+", "-"); // Replace spaces with hyphens
+                .replaceAll("\\s+", "-");
 
         if (slug.isEmpty()) {
             throw new ConflictException("Invalid organization name");
@@ -67,7 +67,6 @@ public class AuthServiceImpl implements AuthService {
         User savedUser = userRepository.save(user);
         String token = jwtUtils.generateToken(savedUser.getEmail());
 
-        // Publish ORGANISATION_REGISTERED event
         eventPublisher.publishEvent(new LocalOrganisationRegisteredEvent(savedOrg, savedUser));
 
         return userMapper.toAuthResponse(savedUser, token);

@@ -49,7 +49,7 @@ export const BookingView: React.FC = () => {
 
   const activeDoctor = doctors.find(d => d.id === selectedDoctorId);
 
-  // ── Fetch doctors ──────────────────────────────────────────────────────────
+  // Fetch doctors on component mount if org slug is present
   useEffect(() => {
     if (!orgSlug) return;
     setStatus('loading');
@@ -59,7 +59,7 @@ export const BookingView: React.FC = () => {
       .catch(err => { setStatus('error'); setStatusMsg(getErrorMessage(err)); });
   }, [orgSlug]);
 
-  // ── Fetch slots ────────────────────────────────────────────────────────────
+  // Fetch available slots when a doctor and date are selected
   useEffect(() => {
     if (!selectedDoctorId || !selectedDate) { setAvailableSlots([]); return; }
     setStatus('loading');
@@ -69,7 +69,7 @@ export const BookingView: React.FC = () => {
       .catch(err => { setStatus('error'); setStatusMsg(getErrorMessage(err)); });
   }, [selectedDoctorId, selectedDate]);
 
-  // ── Payment countdown ──────────────────────────────────────────────────────
+  // Handle the 30-second payment countdown timer
   useEffect(() => {
     if (!reservedAppointment) return;
     const timer = setInterval(() => {
@@ -81,7 +81,7 @@ export const BookingView: React.FC = () => {
     return () => clearInterval(timer);
   }, [reservedAppointment]);
 
-  // ── URL param helpers ──────────────────────────────────────────────────────
+  // Update URL search parameters to reflect selected state
   const handleDoctorChange = (id: string) => {
     setSelectedSlot(null);
     const next = new URLSearchParams(searchParams);
@@ -103,7 +103,7 @@ export const BookingView: React.FC = () => {
       .catch(console.error);
   };
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // Handle booking and payment actions
   const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDoctorId || !selectedDate || !selectedSlot) return;
@@ -187,7 +187,7 @@ export const BookingView: React.FC = () => {
     }
   };
 
-  // ── Card input formatters ──────────────────────────────────────────────────
+  // Formatting helpers for credit card inputs
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let v = e.target.value.replace(/\D/g, '').slice(0, 16);
     setCardNumber(v.match(/.{1,4}/g)?.join(' ') ?? v);
@@ -201,7 +201,7 @@ export const BookingView: React.FC = () => {
   const handleCardCvvChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 3));
 
-  // ────────────────────────────────────────────────────────────────────────────
+
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '1rem', animation: 'fadeIn 0.4s ease-out' }}>
       <header style={{ marginBottom: '2rem', textAlign: 'center' }}>
@@ -213,7 +213,7 @@ export const BookingView: React.FC = () => {
 
       <StatusBanner status={status} message={statusMsg} />
 
-      {/* ── Confirmed Appointment ─────────────────────────────────────────── */}
+      {/* Confirmed Appointment State */}
       {bookedAppointment ? (
         <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid var(--success)', padding: '2rem', borderRadius: 'var(--radius-lg)', textAlign: 'center', marginBottom: '2rem', boxShadow: 'var(--shadow-lg)' }}>
           <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
@@ -249,7 +249,7 @@ export const BookingView: React.FC = () => {
           </div>
         </div>
 
-      /* ── Payment Checkout ──────────────────────────────────────────────── */
+      {/* Payment Checkout State */}
       ) : reservedAppointment ? (
         <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
           <style>{`
@@ -387,7 +387,7 @@ export const BookingView: React.FC = () => {
           </div>
         </div>
 
-      /* ── Booking Form ──────────────────────────────────────────────────── */
+      {/* Initial Booking Form */}
       ) : (
         <div style={{ display: 'grid', gap: '2rem' }}>
           {/* Step 1: Doctor + Date */}

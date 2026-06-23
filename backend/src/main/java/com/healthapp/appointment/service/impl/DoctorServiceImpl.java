@@ -51,7 +51,7 @@ public class DoctorServiceImpl implements DoctorService {
             throw new ConflictException("Email is already in use");
         }
 
-        // Get authenticated Admin to find their organization
+        // Retrieve admin's organization
         User admin = getCurrentUserOrThrow();
 
         Organization org = admin.getOrganization();
@@ -71,7 +71,7 @@ public class DoctorServiceImpl implements DoctorService {
 
         User savedDoctor = userRepository.save(doctor);
 
-        // Provision default 9AM to 5PM availability for all days of the week
+        // Setup default 9-5 working hours
         List<DoctorAvailability> availabilities = new ArrayList<>();
         for (DayOfWeek day : DayOfWeek.values()) {
             DoctorAvailability availability = new DoctorAvailability();
@@ -83,7 +83,7 @@ public class DoctorServiceImpl implements DoctorService {
         }
         availabilityRepository.saveAll(availabilities);
 
-        // Publish DOCTOR_PROVISIONED event (org fields captured inside transaction)
+        // Fire provisioned event
         eventPublisher.publishEvent(new LocalDoctorProvisionedEvent(
                 savedDoctor, admin.getEmail(),
                 org.getId().toString(), org.getName(), org.getSlug()
@@ -102,12 +102,11 @@ public class DoctorServiceImpl implements DoctorService {
             throw new BadRequestException("User is not a doctor");
         }
 
-        // Delete old availabilities
         List<DoctorAvailability> oldAvailabilities = availabilityRepository.findByDoctorId(doctorId);
         availabilityRepository.deleteAll(oldAvailabilities);
-        availabilityRepository.flush(); // Force deletions to database before inserting new availabilities
+        // Flush to prevent unique constraint violations on re-inserts
+        availabilityRepository.flush();
 
-        // Create new ones
         List<DoctorAvailability> newAvailabilities = request.stream().map(req -> {
             if (req.getStartTime().isAfter(req.getEndTime()) || req.getStartTime().equals(req.getEndTime())) {
                 throw new BadRequestException("Start time must be before end time");
@@ -122,7 +121,6 @@ public class DoctorServiceImpl implements DoctorService {
 
         List<DoctorAvailability> saved = availabilityRepository.saveAll(newAvailabilities);
 
-        // Publish DOCTOR_AVAILABILITY_UPDATED event
         String updatedBy = getAuthenticatedName("SYSTEM");
         Organization doctorOrg = doctor.getOrganization();
         eventPublisher.publishEvent(new LocalDoctorAvailabilityUpdatedEvent(
@@ -143,7 +141,7 @@ public class DoctorServiceImpl implements DoctorService {
                     .collect(Collectors.toList());
         }
 
-        // If no orgSlug is provided, check if the current user is authenticated and filter by their organization.
+        // Fallback: check if the current user is authenticated and filter by their organization
         User currentUser = getCurrentUserOrNull();
         if (currentUser != null && currentUser.getOrganization() != null) {
             return userRepository.findByRoleAndOrganizationId(User.Role.DOCTOR, currentUser.getOrganization().getId()).stream()
@@ -151,7 +149,7 @@ public class DoctorServiceImpl implements DoctorService {
                     .collect(Collectors.toList());
         }
 
-        // Return empty list if no context (anonymous call without org slug)
+        // Return empty list if no context is provided
         return new ArrayList<>();
     }
 

@@ -75,7 +75,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional
     public AppointmentResponse reserveAppointment(AppointmentRequest request) {
-        // Clean up expired reservations first
         appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
 
         User doctor = userRepository.findById(request.getDoctorId())
@@ -90,7 +89,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("Cannot book a slot in the past");
         }
 
-        // Align on 30-minute boundary
+        // Enforce strict 30-minute slot intervals
         int minute = request.getSlotStartTime().getMinute();
         int second = request.getSlotStartTime().getSecond();
         int nano = request.getSlotStartTime().getNano();
@@ -98,7 +97,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("Slot start time must be aligned on 30-minute boundaries");
         }
 
-        // Validate that requested slot is in the list of available slots
+        // Check if the requested slot falls within the doctor's schedule
         List<SlotResponse> availableSlots = getAvailableSlots(request.getDoctorId(), request.getSlotStartTime().toLocalDate());
         SlotResponse requestedSlot = availableSlots.stream()
                 .filter(slot -> slot.getSlotStartTime().toInstant().equals(request.getSlotStartTime().toInstant()))
@@ -128,7 +127,6 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         Appointment savedAppointment = appointmentRepository.save(appointment);
 
-        // Audit Log
         AppointmentLog log = new AppointmentLog();
         log.setAppointment(savedAppointment);
         log.setFromStatus(null);
@@ -142,7 +140,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional
     public AppointmentResponse confirmAppointmentPayment(UUID appointmentId) {
-        // Clean up expired reservations first
         appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
 
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -163,7 +160,6 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setReservedUntil(null);
         Appointment savedAppointment = appointmentRepository.save(appointment);
 
-        // Audit Log
         AppointmentLog log = new AppointmentLog();
         log.setAppointment(savedAppointment);
         log.setFromStatus(previousStatus);
@@ -171,7 +167,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setChangedBy("PATIENT");
         logRepository.save(log);
 
-        // Publish local transaction-aware event (capture org context inside transaction)
+        // Fire transaction-bound event with org details
         User doctor2 = savedAppointment.getDoctor();
         Organization org2 = doctor2.getOrganization();
         eventPublisher.publishEvent(new LocalAppointmentCreatedEvent(
@@ -224,7 +220,6 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         String completedBy = getAuthenticatedName("SYSTEM");
 
-        // Audit Log
         AppointmentLog log = new AppointmentLog();
         log.setAppointment(appointment);
         log.setFromStatus(previousStatus);
@@ -232,7 +227,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setChangedBy(completedBy);
         logRepository.save(log);
 
-        // Publish local transaction-aware event
+        // Fire transaction-bound event
         User cmpDoctor = appointment.getDoctor();
         Organization cmpOrg = cmpDoctor != null ? cmpDoctor.getOrganization() : null;
         eventPublisher.publishEvent(new LocalAppointmentCompletedEvent(
@@ -260,7 +255,6 @@ public class AppointmentServiceImpl implements AppointmentService {
         // Find modifier name
         String cancelledBy = getAuthenticatedName("PATIENT");
 
-        // Audit Log
         AppointmentLog log = new AppointmentLog();
         log.setAppointment(appointment);
         log.setFromStatus(previousStatus);
@@ -268,7 +262,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setChangedBy(cancelledBy);
         logRepository.save(log);
 
-        // Publish local transaction-aware event
+        // Fire transaction-bound event
         User canDoctor = appointment.getDoctor();
         Organization canOrg = canDoctor != null ? canDoctor.getOrganization() : null;
         eventPublisher.publishEvent(new LocalAppointmentCancelledEvent(
@@ -282,7 +276,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional
     public List<SlotResponse> getAvailableSlots(UUID doctorId, LocalDate date) {
-        // Clean up expired reservations first
         appointmentRepository.deleteExpiredReservations(OffsetDateTime.now(ZoneOffset.UTC));
 
         User doctor = userRepository.findById(doctorId)
@@ -298,7 +291,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElse(null);
 
         if (availability == null) {
-            return new ArrayList<>(); // Doctor has explicitly disabled availability for this day
+            return new ArrayList<>();
         }
 
         LocalTime start = availability.getStartTime();
@@ -317,7 +310,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         List<Appointment> bookedAppointments = appointmentRepository
                 .findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(doctorId, startOfDay, endOfDay, Appointment.AppointmentStatus.CANCELLED);
 
-        // Map booked slots by instant to check availability and status easily
+        // Build an O(1) lookup map for booked slots
         java.util.Map<Instant, Appointment> bookedMap = bookedAppointments.stream()
                 .collect(Collectors.toMap(
                         appt -> appt.getSlotStartTime().toInstant(),
@@ -383,8 +376,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new UnauthorizedException("Only administrators can view audit logs");
         }
 
-        // Ideally we should filter by organization, but for simplicity we fetch all for now, 
-        // or we could add a repository method to filter. Let's just return all logs for the current demo.
+        // TODO: Filter by organization instead of fetching all logs
         return logRepository.findAll(pageable).map(log -> AppointmentLogResponse.builder()
                 .id(log.getId())
                 .appointmentId(log.getAppointment().getId())
