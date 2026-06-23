@@ -25,6 +25,7 @@ import com.healthapp.appointment.event.LocalAppointmentCompletedEvent;
 import com.healthapp.appointment.event.LocalAppointmentCreatedEvent;
 import com.healthapp.appointment.event.LocalReservationReleasedEvent;
 import com.healthapp.appointment.service.AppointmentService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -46,6 +47,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class AppointmentServiceImpl implements AppointmentService {
 
     private final UserRepository userRepository;
@@ -55,23 +57,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final AppointmentMapper appointmentMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final ProcessedEventRepository processedEventRepository;
-
-    public AppointmentServiceImpl(
-            UserRepository userRepository,
-            DoctorAvailabilityRepository availabilityRepository,
-            AppointmentRepository appointmentRepository,
-            AppointmentLogRepository logRepository,
-            AppointmentMapper appointmentMapper,
-            ApplicationEventPublisher eventPublisher,
-            ProcessedEventRepository processedEventRepository) {
-        this.userRepository = userRepository;
-        this.availabilityRepository = availabilityRepository;
-        this.appointmentRepository = appointmentRepository;
-        this.logRepository = logRepository;
-        this.appointmentMapper = appointmentMapper;
-        this.eventPublisher = eventPublisher;
-        this.processedEventRepository = processedEventRepository;
-    }
 
     @Override
     @Transactional
@@ -237,11 +222,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setStatus(Appointment.AppointmentStatus.COMPLETED);
         appointmentRepository.save(appointment);
 
-        String completedBy = "SYSTEM";
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-            completedBy = auth.getName();
-        }
+        String completedBy = getAuthenticatedName("SYSTEM");
 
         // Audit Log
         AppointmentLog log = new AppointmentLog();
@@ -277,11 +258,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointmentRepository.save(appointment);
 
         // Find modifier name
-        String cancelledBy = "PATIENT";
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-            cancelledBy = auth.getName();
-        }
+        String cancelledBy = getAuthenticatedName("PATIENT");
 
         // Audit Log
         AppointmentLog log = new AppointmentLog();
@@ -372,14 +349,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<AppointmentResponse> getAppointments(Pageable pageable) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            throw new UnauthorizedException("User is not authenticated");
-        }
-
-        String email = auth.getName();
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+        User user = getCurrentUserOrThrow();
 
         Page<Appointment> page;
         if (user.getRole() == User.Role.ADMIN) {
@@ -394,14 +364,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<ProcessedEvent> getProcessedEvents(Pageable pageable) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            throw new UnauthorizedException("User is not authenticated");
-        }
-
-        String email = auth.getName();
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+        User user = getCurrentUserOrThrow();
 
         if (user.getRole() != User.Role.ADMIN) {
             throw new UnauthorizedException("Only administrators can view event logs");
@@ -410,17 +373,11 @@ public class AppointmentServiceImpl implements AppointmentService {
         String orgSlug = user.getOrganization().getSlug();
         return processedEventRepository.findByOrgSlugOrderByProcessedAtDesc(orgSlug, pageable);
     }
+
     @Override
     @Transactional(readOnly = true)
     public Page<AppointmentLogResponse> getAppointmentLogs(Pageable pageable) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            throw new UnauthorizedException("User is not authenticated");
-        }
-
-        String email = auth.getName();
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+        User user = getCurrentUserOrThrow();
 
         if (user.getRole() != User.Role.ADMIN) {
             throw new UnauthorizedException("Only administrators can view audit logs");
@@ -437,5 +394,22 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .changedBy(log.getChangedBy())
                 .changedAt(log.getChangedAt())
                 .build());
+    }
+
+    private User getCurrentUserOrThrow() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+        return userRepository.findByEmail(auth.getName())
+                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+    }
+
+    private String getAuthenticatedName(String defaultName) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            return auth.getName();
+        }
+        return defaultName;
     }
 }

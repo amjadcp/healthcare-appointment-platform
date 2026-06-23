@@ -7,6 +7,7 @@ import com.healthapp.appointment.dto.response.UserResponse;
 import com.healthapp.appointment.security.UserRole;
 import com.healthapp.appointment.service.DoctorService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,13 +25,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/doctors")
+@RequiredArgsConstructor
 public class DoctorController {
 
     private final DoctorService doctorService;
-
-    public DoctorController(DoctorService doctorService) {
-        this.doctorService = doctorService;
-    }
 
     @PostMapping
     @PreAuthorize("hasRole('" + UserRole.ADMIN + "')")

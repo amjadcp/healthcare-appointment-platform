@@ -57,6 +57,9 @@ class DoctorServiceTest {
     @Mock
     private DoctorAvailabilityMapper availabilityMapper;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private DoctorServiceImpl doctorService;
 

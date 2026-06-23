@@ -18,6 +18,7 @@ import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.service.DoctorService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,6 +34,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class DoctorServiceImpl implements DoctorService {
 
     private final UserRepository userRepository;
@@ -42,21 +44,6 @@ public class DoctorServiceImpl implements DoctorService {
     private final DoctorAvailabilityMapper availabilityMapper;
     private final ApplicationEventPublisher eventPublisher;
 
-    public DoctorServiceImpl(
-            UserRepository userRepository,
-            DoctorAvailabilityRepository availabilityRepository,
-            PasswordEncoder passwordEncoder,
-            UserMapper userMapper,
-            DoctorAvailabilityMapper availabilityMapper,
-            ApplicationEventPublisher eventPublisher) {
-        this.userRepository = userRepository;
-        this.availabilityRepository = availabilityRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.userMapper = userMapper;
-        this.availabilityMapper = availabilityMapper;
-        this.eventPublisher = eventPublisher;
-    }
-
     @Override
     @Transactional
     public UserResponse provisionDoctor(DoctorProvisionRequest request) {
@@ -65,13 +52,7 @@ public class DoctorServiceImpl implements DoctorService {
         }
 
         // Get authenticated Admin to find their organization
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            throw new UnauthorizedException("User is not authenticated");
-        }
-        String adminEmail = auth.getName();
-        User admin = userRepository.findByEmail(adminEmail)
-                .orElseThrow(() -> new UnauthorizedException("Authenticated admin not found"));
+        User admin = getCurrentUserOrThrow();
 
         Organization org = admin.getOrganization();
         if (org == null) {
@@ -104,7 +85,7 @@ public class DoctorServiceImpl implements DoctorService {
 
         // Publish DOCTOR_PROVISIONED event (org fields captured inside transaction)
         eventPublisher.publishEvent(new LocalDoctorProvisionedEvent(
-                savedDoctor, adminEmail,
+                savedDoctor, admin.getEmail(),
                 org.getId().toString(), org.getName(), org.getSlug()
         ));
 
@@ -142,11 +123,7 @@ public class DoctorServiceImpl implements DoctorService {
         List<DoctorAvailability> saved = availabilityRepository.saveAll(newAvailabilities);
 
         // Publish DOCTOR_AVAILABILITY_UPDATED event
-        String updatedBy = "SYSTEM";
-        Authentication auth2 = SecurityContextHolder.getContext().getAuthentication();
-        if (auth2 != null && auth2.isAuthenticated() && !"anonymousUser".equals(auth2.getPrincipal())) {
-            updatedBy = auth2.getName();
-        }
+        String updatedBy = getAuthenticatedName("SYSTEM");
         Organization doctorOrg = doctor.getOrganization();
         eventPublisher.publishEvent(new LocalDoctorAvailabilityUpdatedEvent(
                 doctor, saved, updatedBy,
@@ -167,14 +144,11 @@ public class DoctorServiceImpl implements DoctorService {
         }
 
         // If no orgSlug is provided, check if the current user is authenticated and filter by their organization.
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-            User currentUser = userRepository.findByEmail(auth.getName()).orElse(null);
-            if (currentUser != null && currentUser.getOrganization() != null) {
-                return userRepository.findByRoleAndOrganizationId(User.Role.DOCTOR, currentUser.getOrganization().getId()).stream()
-                        .map(userMapper::toUserResponse)
-                        .collect(Collectors.toList());
-            }
+        User currentUser = getCurrentUserOrNull();
+        if (currentUser != null && currentUser.getOrganization() != null) {
+            return userRepository.findByRoleAndOrganizationId(User.Role.DOCTOR, currentUser.getOrganization().getId()).stream()
+                    .map(userMapper::toUserResponse)
+                    .collect(Collectors.toList());
         }
 
         // Return empty list if no context (anonymous call without org slug)
@@ -192,5 +166,30 @@ public class DoctorServiceImpl implements DoctorService {
 
         List<DoctorAvailability> availabilities = availabilityRepository.findByDoctorId(doctorId);
         return availabilityMapper.toResponseList(availabilities);
+    }
+
+    private User getCurrentUserOrThrow() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+        return userRepository.findByEmail(auth.getName())
+                .orElseThrow(() -> new UnauthorizedException("Authenticated user not found"));
+    }
+
+    private User getCurrentUserOrNull() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            return userRepository.findByEmail(auth.getName()).orElse(null);
+        }
+        return null;
+    }
+
+    private String getAuthenticatedName(String defaultName) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            return auth.getName();
+        }
+        return defaultName;
     }
 }

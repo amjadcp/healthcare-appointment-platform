@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.healthapp.appointment.config.RabbitMQConfig;
 import com.healthapp.appointment.dto.response.DlqMessageResponse;
 import com.healthapp.appointment.service.DlqService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -33,10 +33,10 @@ import java.util.Map;
  * without consuming them. Uses ackmode=ack_requeue_true so messages
  * are immediately re-queued after peeking — zero message loss.
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class DlqServiceImpl implements DlqService {
-
-    private static final Logger logger = LoggerFactory.getLogger(DlqServiceImpl.class);
 
     @Value("${rabbitmq.management.host:localhost}")
     private String mgmtHost;
@@ -53,12 +53,6 @@ public class DlqServiceImpl implements DlqService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final RabbitTemplate rabbitTemplate;
-
-    public DlqServiceImpl(RabbitTemplate rabbitTemplate) {
-        this.restTemplate = new RestTemplate();
-        this.objectMapper = new ObjectMapper();
-        this.rabbitTemplate = rabbitTemplate;
-    }
 
     /** Build a Basic Auth header for the Management API. */
     private HttpHeaders buildAuthHeaders() {
@@ -100,10 +94,10 @@ public class DlqServiceImpl implements DlqService {
             return results;
 
         } catch (RestClientException e) {
-            logger.error("Failed to query RabbitMQ Management API for DLQ messages: {}", e.getMessage());
+            log.error("Failed to query RabbitMQ Management API for DLQ messages: {}", e.getMessage());
             return List.of();
         } catch (Exception e) {
-            logger.error("Failed to parse DLQ messages from Management API: {}", e.getMessage(), e);
+            log.error("Failed to parse DLQ messages from Management API: {}", e.getMessage(), e);
             return List.of();
         }
     }
@@ -126,7 +120,7 @@ public class DlqServiceImpl implements DlqService {
                 return ((Number) msgCount).longValue();
             }
         } catch (Exception e) {
-            logger.error("Failed to fetch DLQ message count: {}", e.getMessage());
+            log.error("Failed to fetch DLQ message count: {}", e.getMessage());
         }
         return 0L;
     }
@@ -198,9 +192,9 @@ public class DlqServiceImpl implements DlqService {
                                 .deliveryMode(2) // persistent
                                 .build();
                         channel.basicPublish(RabbitMQConfig.EXCHANGE_NAME, routingKey, props, originalEventJson.getBytes(StandardCharsets.UTF_8));
-                        logger.info("Reprocessed DLQ event {} to routing key {}", eventId, routingKey);
+                        log.info("Reprocessed DLQ event {} to routing key {}", eventId, routingKey);
                     } else {
-                        logger.warn("Could not determine routing key for event type {} of event {}", eventType, eventId);
+                        log.warn("Could not determine routing key for event type {} of event {}", eventType, eventId);
                     }
                     
                     channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
@@ -236,7 +230,7 @@ public class DlqServiceImpl implements DlqService {
                 if (eventId.equals(msgEventId)) {
                     // Ack to remove from DLQ
                     channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
-                    logger.info("Dismissed DLQ event {}", eventId);
+                    log.info("Dismissed DLQ event {}", eventId);
                     found = true;
                 } else {
                     // Move to the tail
@@ -273,7 +267,7 @@ public class DlqServiceImpl implements DlqService {
                 }
                 channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
             }
-            logger.info("Reprocessed all messages from DLQ");
+            log.info("Reprocessed all messages from DLQ");
             return null;
         });
     }
@@ -282,7 +276,7 @@ public class DlqServiceImpl implements DlqService {
     public void dismissAll() {
         rabbitTemplate.execute(channel -> {
             channel.queuePurge(RabbitMQConfig.DLQ_QUEUE);
-            logger.info("Purged/Dismissed all DLQ messages");
+            log.info("Purged/Dismissed all DLQ messages");
             return null;
         });
     }
@@ -292,7 +286,7 @@ public class DlqServiceImpl implements DlqService {
         try {
             return objectMapper.readValue(bodyStr, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
-            logger.error("Failed to parse DLQ message body: {}", bodyStr, e);
+            log.error("Failed to parse DLQ message body: {}", bodyStr, e);
             return Map.of();
         }
     }
@@ -327,7 +321,7 @@ public class DlqServiceImpl implements DlqService {
             }
             return bodyStr;
         } catch (Exception e) {
-            logger.error("Failed to write original event JSON", e);
+            log.error("Failed to write original event JSON", e);
             return bodyStr;
         }
     }

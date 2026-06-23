@@ -9,6 +9,7 @@ import com.healthapp.appointment.model.ProcessedEvent;
 import com.healthapp.appointment.service.AppointmentService;
 import com.healthapp.appointment.service.DlqService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -32,15 +33,11 @@ import com.healthapp.appointment.security.UserRole;
 
 @RestController
 @RequestMapping("/api/v1")
+@RequiredArgsConstructor
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
     private final DlqService dlqService;
-
-    public AppointmentController(AppointmentService appointmentService, DlqService dlqService) {
-        this.appointmentService = appointmentService;
-        this.dlqService = dlqService;
-    }
 
     @PostMapping("/appointments")
     public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody AppointmentRequest request) {

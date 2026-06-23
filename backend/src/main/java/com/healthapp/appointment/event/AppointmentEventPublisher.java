@@ -4,8 +4,8 @@ import com.healthapp.appointment.config.RabbitMQConfig;
 import com.healthapp.appointment.model.Appointment;
 import com.healthapp.appointment.model.DoctorAvailability;
 import com.healthapp.appointment.model.User;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -18,16 +18,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class AppointmentEventPublisher {
 
-    private static final Logger logger = LoggerFactory.getLogger(AppointmentEventPublisher.class);
-
     private final RabbitTemplate rabbitTemplate;
-
-    public AppointmentEventPublisher(RabbitTemplate rabbitTemplate) {
-        this.rabbitTemplate = rabbitTemplate;
-    }
 
     // ── §2.1 APPOINTMENT_CONFIRMED ────────────────────────────────────────────
 
@@ -36,7 +32,7 @@ public class AppointmentEventPublisher {
         Appointment appt = event.getAppointment();
         User doctor = appt.getDoctor();
 
-        logger.info("Publishing APPOINTMENT_CONFIRMED for appointment ID: {}", appt.getId());
+        log.info("Publishing APPOINTMENT_CONFIRMED for appointment ID: {}", appt.getId());
 
         AppointmentConfirmedPayload payload = new AppointmentConfirmedPayload(
                 appt.getId(),
@@ -64,7 +60,7 @@ public class AppointmentEventPublisher {
         Appointment appt = event.getAppointment();
         User doctor = appt.getDoctor();
 
-        logger.info("Publishing APPOINTMENT_CANCELLED for appointment ID: {}", appt.getId());
+        log.info("Publishing APPOINTMENT_CANCELLED for appointment ID: {}", appt.getId());
 
         AppointmentCancelledPayload payload = new AppointmentCancelledPayload(
                 appt.getId(),
@@ -92,7 +88,7 @@ public class AppointmentEventPublisher {
         Appointment appt = event.getAppointment();
         User doctor = appt.getDoctor();
 
-        logger.info("Publishing APPOINTMENT_COMPLETED for appointment ID: {}", appt.getId());
+        log.info("Publishing APPOINTMENT_COMPLETED for appointment ID: {}", appt.getId());
 
         AppointmentCompletedPayload payload = new AppointmentCompletedPayload(
                 appt.getId(),
@@ -119,7 +115,7 @@ public class AppointmentEventPublisher {
         Appointment appt = event.getAppointment();
         User doctor = appt.getDoctor();
 
-        logger.info("Publishing APPOINTMENT_RESERVATION_RELEASED for appointment ID: {}", appt.getId());
+        log.info("Publishing APPOINTMENT_RESERVATION_RELEASED for appointment ID: {}", appt.getId());
 
         ReservationReleasedPayload payload = new ReservationReleasedPayload(
                 appt.getId(),
@@ -141,7 +137,7 @@ public class AppointmentEventPublisher {
     public void handleDoctorProvisioned(LocalDoctorProvisionedEvent event) {
         User doctor = event.getDoctor();
 
-        logger.info("Publishing DOCTOR_PROVISIONED for doctor ID: {}", doctor.getId());
+        log.info("Publishing DOCTOR_PROVISIONED for doctor ID: {}", doctor.getId());
 
         DoctorProvisionedPayload payload = new DoctorProvisionedPayload(
                 doctor.getId(),
@@ -165,7 +161,7 @@ public class AppointmentEventPublisher {
     public void handleDoctorAvailabilityUpdated(LocalDoctorAvailabilityUpdatedEvent event) {
         User doctor = event.getDoctor();
 
-        logger.info("Publishing DOCTOR_AVAILABILITY_UPDATED for doctor ID: {}", doctor.getId());
+        log.info("Publishing DOCTOR_AVAILABILITY_UPDATED for doctor ID: {}", doctor.getId());
 
         List<Map<String, Object>> schedule = event.getUpdatedSchedule().stream()
                 .map(a -> Map.<String, Object>of(
@@ -192,7 +188,7 @@ public class AppointmentEventPublisher {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrganisationRegistered(LocalOrganisationRegisteredEvent event) {
-        logger.info("Publishing ORGANISATION_REGISTERED for org ID: {}", event.getOrganization().getId());
+        log.info("Publishing ORGANISATION_REGISTERED for org ID: {}", event.getOrganization().getId());
 
         OrganisationRegisteredPayload payload = new OrganisationRegisteredPayload(
                 event.getOrganization().getId(),
@@ -221,9 +217,9 @@ public class AppointmentEventPublisher {
         );
         try {
             rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, routingKey, envelope);
-            logger.info("Published {} [eventId={}] → routing_key={}", eventType, envelope.getEventId(), routingKey);
+            log.info("Published {} [eventId={}] → routing_key={}", eventType, envelope.getEventId(), routingKey);
         } catch (Exception e) {
-            logger.error("Failed to publish {} event [eventId={}]: {}", eventType, envelope.getEventId(), e.getMessage(), e);
+            log.error("Failed to publish {} event [eventId={}]: {}", eventType, envelope.getEventId(), e.getMessage(), e);
         }
     }
 }

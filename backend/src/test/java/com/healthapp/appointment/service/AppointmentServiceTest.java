@@ -59,6 +59,9 @@ class AppointmentServiceTest {
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private com.healthapp.appointment.repository.ProcessedEventRepository processedEventRepository;
+
     @InjectMocks
     private AppointmentServiceImpl appointmentService;
 
@@ -90,7 +93,23 @@ class AppointmentServiceTest {
         when(availabilityRepository.findByDoctorIdAndDayOfWeek(eq(doctorId), any())).thenReturn(Optional.of(defaultAvailability));
         when(appointmentRepository.findByDoctorIdAndSlotStartTimeBetweenAndStatusNot(eq(doctorId), any(), any(), any()))
                 .thenReturn(Collections.emptyList());
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment appt = inv.getArgument(0);
+            if (appt.getId() == null) {
+                appt.setId(UUID.randomUUID());
+            }
+            return appt;
+        });
+
+        when(appointmentRepository.findById(any(UUID.class))).thenAnswer(inv -> {
+            Appointment appt = new Appointment();
+            appt.setId(inv.getArgument(0));
+            appt.setDoctor(doctor);
+            appt.setStatus(Appointment.AppointmentStatus.PENDING_PAYMENT);
+            return Optional.of(appt);
+        });
+
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(new AppointmentResponse(
                 UUID.randomUUID(), "Patient Name", "patient@email.com", "+919999999999", doctorId, "Dr. Jane Smith", slotTime, slotTime.plusMinutes(30), "CONFIRMED", "CASH", 0L
         ));
@@ -99,8 +118,8 @@ class AppointmentServiceTest {
 
         assertNotNull(response);
         assertEquals("Patient Name", response.getPatientName());
-        verify(appointmentRepository, times(1)).save(any(Appointment.class));
-        verify(logRepository, times(1)).save(any());
+        verify(appointmentRepository, times(2)).save(any(Appointment.class));
+        verify(logRepository, times(2)).save(any());
     }
 
     @Test

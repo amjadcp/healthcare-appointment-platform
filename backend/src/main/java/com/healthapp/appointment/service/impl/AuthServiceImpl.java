@@ -13,12 +13,14 @@ import com.healthapp.appointment.repository.OrganizationRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.security.JwtUtils;
 import com.healthapp.appointment.service.AuthService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
@@ -27,21 +29,6 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtils jwtUtils;
     private final UserMapper userMapper;
     private final ApplicationEventPublisher eventPublisher;
-
-    public AuthServiceImpl(
-            UserRepository userRepository,
-            OrganizationRepository organizationRepository,
-            PasswordEncoder passwordEncoder,
-            JwtUtils jwtUtils,
-            UserMapper userMapper,
-            ApplicationEventPublisher eventPublisher) {
-        this.userRepository = userRepository;
-        this.organizationRepository = organizationRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtUtils = jwtUtils;
-        this.userMapper = userMapper;
-        this.eventPublisher = eventPublisher;
-    }
 
     @Override
     @Transactional
