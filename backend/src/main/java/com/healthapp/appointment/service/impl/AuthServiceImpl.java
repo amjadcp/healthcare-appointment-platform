@@ -3,6 +3,7 @@ package com.healthapp.appointment.service.impl;
 import com.healthapp.appointment.dto.request.LoginRequest;
 import com.healthapp.appointment.dto.request.RegisterRequest;
 import com.healthapp.appointment.dto.response.AuthResponse;
+import com.healthapp.appointment.event.LocalOrganisationRegisteredEvent;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.UnauthorizedException;
 import com.healthapp.appointment.mapper.UserMapper;
@@ -12,6 +13,7 @@ import com.healthapp.appointment.repository.OrganizationRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.security.JwtUtils;
 import com.healthapp.appointment.service.AuthService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,18 +26,21 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final UserMapper userMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AuthServiceImpl(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
             PasswordEncoder passwordEncoder,
             JwtUtils jwtUtils,
-            UserMapper userMapper) {
+            UserMapper userMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.userMapper = userMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -74,6 +79,9 @@ public class AuthServiceImpl implements AuthService {
 
         User savedUser = userRepository.save(user);
         String token = jwtUtils.generateToken(savedUser.getEmail());
+
+        // Publish ORGANISATION_REGISTERED event
+        eventPublisher.publishEvent(new LocalOrganisationRegisteredEvent(savedOrg, savedUser));
 
         return userMapper.toAuthResponse(savedUser, token);
     }

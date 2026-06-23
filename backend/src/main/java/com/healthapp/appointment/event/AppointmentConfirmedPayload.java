@@ -12,18 +12,18 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AppointmentCancelledPayload {
+public class AppointmentConfirmedPayload {
     private UUID appointmentId;
     private String patientName;
     private String patientEmail;  // nullable
     private String patientPhone;
     private UUID doctorId;
     private String doctorName;
+    private UUID orgId;
     private String orgName;
     private String orgSlug;
     private OffsetDateTime slotStartTime;
-    private String previousStatus;
+    private OffsetDateTime slotEndTime;
+    private String paymentMethod;
     private String status;
-    private String cancelledBy;
-    private String reason;
 }

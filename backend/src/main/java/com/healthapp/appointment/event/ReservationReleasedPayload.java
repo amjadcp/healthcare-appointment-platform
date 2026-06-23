@@ -12,18 +12,13 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AppointmentCancelledPayload {
+public class ReservationReleasedPayload {
     private UUID appointmentId;
-    private String patientName;
-    private String patientEmail;  // nullable
-    private String patientPhone;
     private UUID doctorId;
-    private String doctorName;
-    private String orgName;
+    private UUID orgId;
     private String orgSlug;
     private OffsetDateTime slotStartTime;
-    private String previousStatus;
-    private String status;
-    private String cancelledBy;
-    private String reason;
+    private OffsetDateTime reservedAt;
+    private OffsetDateTime releasedAt;
+    private String reason; // "EXPIRED" or "USER_CANCELLED"
 }

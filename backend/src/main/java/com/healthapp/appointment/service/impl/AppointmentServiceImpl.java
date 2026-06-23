@@ -11,13 +11,16 @@ import com.healthapp.appointment.mapper.AppointmentMapper;
 import com.healthapp.appointment.model.Appointment;
 import com.healthapp.appointment.model.AppointmentLog;
 import com.healthapp.appointment.model.DoctorAvailability;
+import com.healthapp.appointment.model.Organization;
 import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.AppointmentLogRepository;
 import com.healthapp.appointment.repository.AppointmentRepository;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.event.LocalAppointmentCancelledEvent;
+import com.healthapp.appointment.event.LocalAppointmentCompletedEvent;
 import com.healthapp.appointment.event.LocalAppointmentCreatedEvent;
+import com.healthapp.appointment.event.LocalReservationReleasedEvent;
 import com.healthapp.appointment.service.AppointmentService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -177,8 +180,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setChangedBy("PATIENT");
         logRepository.save(log);
 
-        // Publish local transaction-aware event
-        eventPublisher.publishEvent(new LocalAppointmentCreatedEvent(savedAppointment));
+        // Publish local transaction-aware event (capture org context inside transaction)
+        User doctor2 = savedAppointment.getDoctor();
+        Organization org2 = doctor2.getOrganization();
+        eventPublisher.publishEvent(new LocalAppointmentCreatedEvent(
+                savedAppointment,
+                org2 != null ? org2.getId().toString() : null,
+                org2 != null ? org2.getName() : null,
+                org2 != null ? org2.getSlug() : null,
+                doctor2.getFirstName() + " " + doctor2.getLastName()
+        ));
 
         return appointmentMapper.toResponse(savedAppointment);
     }
@@ -190,7 +201,19 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElse(null);
 
         if (appointment != null && appointment.getStatus() == Appointment.AppointmentStatus.PENDING_PAYMENT) {
+            OffsetDateTime reservedAt = appointment.getReservedUntil() != null
+                    ? appointment.getReservedUntil().minusSeconds(30)
+                    : OffsetDateTime.now(ZoneOffset.UTC);
+            // Capture org context before deleting
+            User relDoctor = appointment.getDoctor();
+            Organization relOrg = relDoctor != null ? relDoctor.getOrganization() : null;
+            String relOrgId   = relOrg != null ? relOrg.getId().toString() : null;
+            String relOrgSlug = relOrg != null ? relOrg.getSlug() : null;
+
             appointmentRepository.delete(appointment);
+            appointmentRepository.flush();
+            eventPublisher.publishEvent(new LocalReservationReleasedEvent(
+                    appointment, reservedAt, "USER_CANCELLED", relOrgId, relOrgSlug));
         }
     }
 
@@ -221,6 +244,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.setToStatus(Appointment.AppointmentStatus.COMPLETED);
         log.setChangedBy(completedBy);
         logRepository.save(log);
+
+        // Publish local transaction-aware event
+        User cmpDoctor = appointment.getDoctor();
+        Organization cmpOrg = cmpDoctor != null ? cmpDoctor.getOrganization() : null;
+        eventPublisher.publishEvent(new LocalAppointmentCompletedEvent(
+                appointment, completedBy,
+                cmpOrg != null ? cmpOrg.getName() : null,
+                cmpOrg != null ? cmpOrg.getSlug() : null,
+                cmpDoctor != null ? cmpDoctor.getFirstName() + " " + cmpDoctor.getLastName() : null
+        ));
     }
 
     @Override
@@ -253,7 +286,14 @@ public class AppointmentServiceImpl implements AppointmentService {
         logRepository.save(log);
 
         // Publish local transaction-aware event
-        eventPublisher.publishEvent(new LocalAppointmentCancelledEvent(appointment, cancelledBy, "User requested cancellation"));
+        User canDoctor = appointment.getDoctor();
+        Organization canOrg = canDoctor != null ? canDoctor.getOrganization() : null;
+        eventPublisher.publishEvent(new LocalAppointmentCancelledEvent(
+                appointment, cancelledBy, "User requested cancellation",
+                canOrg != null ? canOrg.getName() : null,
+                canOrg != null ? canOrg.getSlug() : null,
+                canDoctor != null ? canDoctor.getFirstName() + " " + canDoctor.getLastName() : null
+        ));
     }
 
     @Override

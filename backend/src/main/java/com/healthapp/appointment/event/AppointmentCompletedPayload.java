@@ -12,7 +12,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AppointmentCancelledPayload {
+public class AppointmentCompletedPayload {
     private UUID appointmentId;
     private String patientName;
     private String patientEmail;  // nullable
@@ -22,8 +22,7 @@ public class AppointmentCancelledPayload {
     private String orgName;
     private String orgSlug;
     private OffsetDateTime slotStartTime;
-    private String previousStatus;
+    private OffsetDateTime slotEndTime;
+    private String completedBy;
     private String status;
-    private String cancelledBy;
-    private String reason;
 }

@@ -4,21 +4,18 @@ import com.healthapp.appointment.model.Appointment;
 import lombok.Getter;
 
 @Getter
-public class LocalAppointmentCancelledEvent {
+public class LocalAppointmentCompletedEvent {
     private final Appointment appointment;
-    private final String cancelledBy;
-    private final String reason;
+    private final String completedBy;
     // Org/doctor context captured inside the transaction
     private final String orgName;
     private final String orgSlug;
     private final String doctorName;
 
-    public LocalAppointmentCancelledEvent(Appointment appointment,
-                                          String cancelledBy, String reason,
+    public LocalAppointmentCompletedEvent(Appointment appointment, String completedBy,
                                           String orgName, String orgSlug, String doctorName) {
         this.appointment = appointment;
-        this.cancelledBy = cancelledBy;
-        this.reason = reason;
+        this.completedBy = completedBy;
         this.orgName = orgName;
         this.orgSlug = orgSlug;
         this.doctorName = doctorName;

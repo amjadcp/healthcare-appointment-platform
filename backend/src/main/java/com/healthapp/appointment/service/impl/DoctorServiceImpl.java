@@ -4,6 +4,8 @@ import com.healthapp.appointment.dto.request.AvailabilityUpdateRequest;
 import com.healthapp.appointment.dto.request.DoctorProvisionRequest;
 import com.healthapp.appointment.dto.response.DoctorAvailabilityResponse;
 import com.healthapp.appointment.dto.response.UserResponse;
+import com.healthapp.appointment.event.LocalDoctorAvailabilityUpdatedEvent;
+import com.healthapp.appointment.event.LocalDoctorProvisionedEvent;
 import com.healthapp.appointment.exception.BadRequestException;
 import com.healthapp.appointment.exception.ConflictException;
 import com.healthapp.appointment.exception.ResourceNotFoundException;
@@ -16,6 +18,7 @@ import com.healthapp.appointment.model.User;
 import com.healthapp.appointment.repository.DoctorAvailabilityRepository;
 import com.healthapp.appointment.repository.UserRepository;
 import com.healthapp.appointment.service.DoctorService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,18 +40,21 @@ public class DoctorServiceImpl implements DoctorService {
     private final PasswordEncoder passwordEncoder;
     private final UserMapper userMapper;
     private final DoctorAvailabilityMapper availabilityMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DoctorServiceImpl(
             UserRepository userRepository,
             DoctorAvailabilityRepository availabilityRepository,
             PasswordEncoder passwordEncoder,
             UserMapper userMapper,
-            DoctorAvailabilityMapper availabilityMapper) {
+            DoctorAvailabilityMapper availabilityMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.availabilityRepository = availabilityRepository;
         this.passwordEncoder = passwordEncoder;
         this.userMapper = userMapper;
         this.availabilityMapper = availabilityMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -96,6 +102,12 @@ public class DoctorServiceImpl implements DoctorService {
         }
         availabilityRepository.saveAll(availabilities);
 
+        // Publish DOCTOR_PROVISIONED event (org fields captured inside transaction)
+        eventPublisher.publishEvent(new LocalDoctorProvisionedEvent(
+                savedDoctor, adminEmail,
+                org.getId().toString(), org.getName(), org.getSlug()
+        ));
+
         return userMapper.toUserResponse(savedDoctor);
     }
 
@@ -128,6 +140,20 @@ public class DoctorServiceImpl implements DoctorService {
         }).collect(Collectors.toList());
 
         List<DoctorAvailability> saved = availabilityRepository.saveAll(newAvailabilities);
+
+        // Publish DOCTOR_AVAILABILITY_UPDATED event
+        String updatedBy = "SYSTEM";
+        Authentication auth2 = SecurityContextHolder.getContext().getAuthentication();
+        if (auth2 != null && auth2.isAuthenticated() && !"anonymousUser".equals(auth2.getPrincipal())) {
+            updatedBy = auth2.getName();
+        }
+        Organization doctorOrg = doctor.getOrganization();
+        eventPublisher.publishEvent(new LocalDoctorAvailabilityUpdatedEvent(
+                doctor, saved, updatedBy,
+                doctorOrg != null ? doctorOrg.getId().toString() : null,
+                doctorOrg != null ? doctorOrg.getSlug() : null
+        ));
+
         return availabilityMapper.toResponseList(saved);
     }
 
