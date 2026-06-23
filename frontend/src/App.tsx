@@ -34,16 +34,8 @@ function App() {
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <Link
                   to="/admin"
-                  style={{
-                    background: 'var(--primary)',
-                    color: 'white',
-                    padding: '0.85rem 2rem',
-                    borderRadius: 'var(--radius-md)',
-                    fontWeight: 600,
-                    fontSize: '1rem',
-                    boxShadow: 'var(--shadow-md)',
-                    transition: 'all var(--transition-fast)'
-                  }}
+                  className="btn btn-primary"
+                  style={{ padding: '0.85rem 2rem' }}
                 >
                   Manage Your Clinic (Admin / Doctor)
                 </Link>

@@ -1,1 +1,2 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+// Deprecated: This configuration file has been replaced by the configured axios client's baseURL inside src/api/client.ts.
+export {};
