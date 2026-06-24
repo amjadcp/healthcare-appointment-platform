@@ -202,7 +202,8 @@ public class AppointmentController {
     )
     public ResponseEntity<List<DlqMessageResponse>> getDlqMessages(
             @Parameter(description = "Maximum number of messages to inspect") @RequestParam(defaultValue = "50") int count) {
-        List<DlqMessageResponse> messages = dlqService.peekDlqMessages(count);
+        String orgSlug = appointmentService.getCurrentUserOrganizationSlug();
+        List<DlqMessageResponse> messages = dlqService.peekDlqMessages(count, orgSlug);
         return ResponseEntity.ok(messages);
     }
 
@@ -218,7 +219,8 @@ public class AppointmentController {
         }
     )
     public ResponseEntity<java.util.Map<String, Long>> getDlqCount() {
-        long count = dlqService.getDlqMessageCount();
+        String orgSlug = appointmentService.getCurrentUserOrganizationSlug();
+        long count = dlqService.getDlqMessageCount(orgSlug);
         return ResponseEntity.ok(java.util.Map.of("count", count));
     }
 
@@ -236,15 +238,16 @@ public class AppointmentController {
     )
     public ResponseEntity<Void> reprocessDlqMessages(
             @Parameter(description = "Optional eventId of a specific message to reprocess") @RequestParam(required = false) String eventId) {
+        String orgSlug = appointmentService.getCurrentUserOrganizationSlug();
         if (eventId != null && !eventId.trim().isEmpty()) {
-            boolean success = dlqService.reprocessMessage(eventId);
+            boolean success = dlqService.reprocessMessage(eventId, orgSlug);
             if (success) {
                 return ResponseEntity.ok().build();
             } else {
                 return ResponseEntity.notFound().build();
             }
         } else {
-            dlqService.reprocessAll();
+            dlqService.reprocessAll(orgSlug);
             return ResponseEntity.ok().build();
         }
     }
@@ -263,15 +266,16 @@ public class AppointmentController {
     )
     public ResponseEntity<Void> dismissDlqMessages(
             @Parameter(description = "Optional eventId of a specific message to dismiss") @RequestParam(required = false) String eventId) {
+        String orgSlug = appointmentService.getCurrentUserOrganizationSlug();
         if (eventId != null && !eventId.trim().isEmpty()) {
-            boolean success = dlqService.dismissMessage(eventId);
+            boolean success = dlqService.dismissMessage(eventId, orgSlug);
             if (success) {
                 return ResponseEntity.ok().build();
             } else {
                 return ResponseEntity.notFound().build();
             }
         } else {
-            dlqService.dismissAll();
+            dlqService.dismissAll(orgSlug);
             return ResponseEntity.ok().build();
         }
     }

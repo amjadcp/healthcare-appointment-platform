@@ -64,8 +64,7 @@ public class DlqServiceImpl implements DlqService {
         return headers;
     }
 
-    @Override
-    public List<DlqMessageResponse> peekDlqMessages(int count) {
+    private List<DlqMessageResponse> peekDlqMessagesRaw(int count) {
         String vhost = URLEncoder.encode("/", StandardCharsets.UTF_8);
         String queue = URLEncoder.encode(RabbitMQConfig.DLQ_QUEUE, StandardCharsets.UTF_8);
         String url = String.format("http://%s:%d/api/queues/%s/%s/get", mgmtHost, mgmtPort, vhost, queue);
@@ -103,26 +102,67 @@ public class DlqServiceImpl implements DlqService {
     }
 
     @Override
-    public long getDlqMessageCount() {
-        String vhost = URLEncoder.encode("/", StandardCharsets.UTF_8);
-        String queue = URLEncoder.encode(RabbitMQConfig.DLQ_QUEUE, StandardCharsets.UTF_8);
-        String url = String.format("http://%s:%d/api/queues/%s/%s", mgmtHost, mgmtPort, vhost, queue);
-        URI uri = URI.create(url);
-
-        HttpEntity<Void> entity = new HttpEntity<>(buildAuthHeaders());
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(uri, HttpMethod.GET, entity, String.class);
-            Map<String, Object> queueInfo = objectMapper.readValue(
-                    response.getBody(), new TypeReference<Map<String, Object>>() {}
-            );
-            Object msgCount = queueInfo.get("messages");
-            if (msgCount instanceof Number) {
-                return ((Number) msgCount).longValue();
+    public List<DlqMessageResponse> peekDlqMessages(int count, String orgSlug) {
+        List<DlqMessageResponse> allMessages = peekDlqMessagesRaw(1000);
+        List<DlqMessageResponse> filtered = new ArrayList<>();
+        for (DlqMessageResponse msg : allMessages) {
+            String msgOrgSlug = extractOrgSlugFromResponse(msg);
+            if (orgSlug != null && orgSlug.equals(msgOrgSlug)) {
+                filtered.add(msg);
+                if (filtered.size() >= count) {
+                    break;
+                }
             }
-        } catch (Exception e) {
-            log.error("Failed to fetch DLQ message count: {}", e.getMessage());
         }
-        return 0L;
+        return filtered;
+    }
+
+    @Override
+    public long getDlqMessageCount(String orgSlug) {
+        List<DlqMessageResponse> allMessages = peekDlqMessagesRaw(1000);
+        long count = 0;
+        for (DlqMessageResponse msg : allMessages) {
+            String msgOrgSlug = extractOrgSlugFromResponse(msg);
+            if (orgSlug != null && orgSlug.equals(msgOrgSlug)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String extractOrgSlugFromResponse(DlqMessageResponse msg) {
+        Object payloadObj = msg.getPayload();
+        if (payloadObj instanceof Map) {
+            Map<?, ?> envelope = (Map<?, ?>) payloadObj;
+            
+            // Check for explicit worker DLQ wrap
+            if (envelope.containsKey("originalEvent")) {
+                Object original = envelope.get("originalEvent");
+                if (original instanceof Map) {
+                    Map<?, ?> origMap = (Map<?, ?>) original;
+                    if (origMap.containsKey("payload")) {
+                        Object innerPayload = origMap.get("payload");
+                        if (innerPayload instanceof Map) {
+                            Map<?, ?> innerMap = (Map<?, ?>) innerPayload;
+                            if (innerMap.containsKey("orgSlug")) {
+                                return String.valueOf(innerMap.get("orgSlug"));
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (envelope.containsKey("payload")) {
+                Object innerPayload = envelope.get("payload");
+                if (innerPayload instanceof Map) {
+                    Map<?, ?> innerMap = (Map<?, ?>) innerPayload;
+                    if (innerMap.containsKey("orgSlug")) {
+                        return String.valueOf(innerMap.get("orgSlug"));
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
@@ -165,7 +205,7 @@ public class DlqServiceImpl implements DlqService {
     }
 
     @Override
-    public boolean reprocessMessage(String eventId) {
+    public boolean reprocessMessage(String eventId, String orgSlug) {
         return rabbitTemplate.execute(channel -> {
             boolean found = false;
             long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
@@ -181,6 +221,14 @@ public class DlqServiceImpl implements DlqService {
                 String msgEventId = extractEventId(bodyStr);
                 
                 if (eventId.equals(msgEventId)) {
+                    String msgOrgSlug = extractOrgSlugFromBody(bodyStr);
+                    if (orgSlug == null || !orgSlug.equals(msgOrgSlug)) {
+                        log.warn("Organization mismatch: User org={} tried to reprocess message org={}", orgSlug, msgOrgSlug);
+                        channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                        channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                        continue;
+                    }
+                    
                     // Reprocess: publish original event back to main topic exchange
                     String originalEventJson = extractOriginalEventJson(bodyStr);
                     String eventType = extractEventType(bodyStr);
@@ -199,8 +247,6 @@ public class DlqServiceImpl implements DlqService {
                     
                     channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
                     found = true;
-                    // Keep scanning the rest of the queue to maintain the loop for non-targets,
-                    // but we will finish scanning the queue to rotate all other messages to tail.
                 } else {
                     // Move message to the tail of the DLQ to inspect the next ones
                     channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
@@ -212,7 +258,7 @@ public class DlqServiceImpl implements DlqService {
     }
 
     @Override
-    public boolean dismissMessage(String eventId) {
+    public boolean dismissMessage(String eventId, String orgSlug) {
         return rabbitTemplate.execute(channel -> {
             boolean found = false;
             long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
@@ -228,6 +274,13 @@ public class DlqServiceImpl implements DlqService {
                 String msgEventId = extractEventId(bodyStr);
                 
                 if (eventId.equals(msgEventId)) {
+                    String msgOrgSlug = extractOrgSlugFromBody(bodyStr);
+                    if (orgSlug == null || !orgSlug.equals(msgOrgSlug)) {
+                        log.warn("Organization mismatch: User org={} tried to dismiss message org={}", orgSlug, msgOrgSlug);
+                        channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                        channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                        continue;
+                    }
                     // Ack to remove from DLQ
                     channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
                     log.info("Dismissed DLQ event {}", eventId);
@@ -243,7 +296,7 @@ public class DlqServiceImpl implements DlqService {
     }
 
     @Override
-    public void reprocessAll() {
+    public void reprocessAll(String orgSlug) {
         rabbitTemplate.execute(channel -> {
             long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
             for (long i = 0; i < messageCount; i++) {
@@ -254,31 +307,91 @@ public class DlqServiceImpl implements DlqService {
                 
                 byte[] body = response.getBody();
                 String bodyStr = new String(body, StandardCharsets.UTF_8);
-                String originalEventJson = extractOriginalEventJson(bodyStr);
-                String eventType = extractEventType(bodyStr);
-                String routingKey = getRoutingKey(eventType);
+                String msgOrgSlug = extractOrgSlugFromBody(bodyStr);
                 
-                if (routingKey != null) {
-                    AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()
-                            .contentType("application/json")
-                            .deliveryMode(2)
-                            .build();
-                    channel.basicPublish(RabbitMQConfig.EXCHANGE_NAME, routingKey, props, originalEventJson.getBytes(StandardCharsets.UTF_8));
+                if (orgSlug != null && orgSlug.equals(msgOrgSlug)) {
+                    String originalEventJson = extractOriginalEventJson(bodyStr);
+                    String eventType = extractEventType(bodyStr);
+                    String routingKey = getRoutingKey(eventType);
+                    
+                    if (routingKey != null) {
+                        AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()
+                                .contentType("application/json")
+                                .deliveryMode(2)
+                                .build();
+                        channel.basicPublish(RabbitMQConfig.EXCHANGE_NAME, routingKey, props, originalEventJson.getBytes(StandardCharsets.UTF_8));
+                    }
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                    log.info("Reprocessed DLQ event {} for organization {}", extractEventId(bodyStr), orgSlug);
+                } else {
+                    // Move message to the tail of the DLQ
+                    channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
                 }
-                channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
             }
-            log.info("Reprocessed all messages from DLQ");
             return null;
         });
     }
 
     @Override
-    public void dismissAll() {
+    public void dismissAll(String orgSlug) {
         rabbitTemplate.execute(channel -> {
-            channel.queuePurge(RabbitMQConfig.DLQ_QUEUE);
-            log.info("Purged/Dismissed all DLQ messages");
+            long messageCount = channel.queueDeclarePassive(RabbitMQConfig.DLQ_QUEUE).getMessageCount();
+            for (long i = 0; i < messageCount; i++) {
+                GetResponse response = channel.basicGet(RabbitMQConfig.DLQ_QUEUE, false);
+                if (response == null) {
+                    break;
+                }
+                
+                byte[] body = response.getBody();
+                String bodyStr = new String(body, StandardCharsets.UTF_8);
+                String msgOrgSlug = extractOrgSlugFromBody(bodyStr);
+                
+                if (orgSlug != null && orgSlug.equals(msgOrgSlug)) {
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                    log.info("Dismissed DLQ event {} for organization {}", extractEventId(bodyStr), orgSlug);
+                } else {
+                    // Move message to the tail of the DLQ
+                    channel.basicPublish(RabbitMQConfig.DLQ_EXCHANGE, RabbitMQConfig.DLQ_ROUTING_KEY, response.getProps(), response.getBody());
+                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                }
+            }
             return null;
         });
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractOrgSlugFromBody(String bodyStr) {
+        try {
+            Map<String, Object> map = parseMessageBody(bodyStr);
+            if (map.containsKey("originalEvent")) {
+                Object original = map.get("originalEvent");
+                if (original instanceof Map) {
+                    Map<String, Object> origMap = (Map<String, Object>) original;
+                    if (origMap.containsKey("payload")) {
+                        Object payload = origMap.get("payload");
+                        if (payload instanceof Map) {
+                            Map<String, Object> payMap = (Map<String, Object>) payload;
+                            if (payMap.containsKey("orgSlug")) {
+                                return String.valueOf(payMap.get("orgSlug"));
+                            }
+                        }
+                    }
+                }
+            }
+            if (map.containsKey("payload")) {
+                Object payload = map.get("payload");
+                if (payload instanceof Map) {
+                    Map<String, Object> payMap = (Map<String, Object>) payload;
+                    if (payMap.containsKey("orgSlug")) {
+                        return String.valueOf(payMap.get("orgSlug"));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to extract orgSlug from DLQ message body: {}", bodyStr, e);
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")

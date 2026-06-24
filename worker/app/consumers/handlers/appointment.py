@@ -19,6 +19,7 @@ logger = logging.getLogger("worker.handlers.appointment")
 
 
 def handle_appointment_confirmed(payload_dict: dict, db: Session) -> None:
+    payload = AppointmentConfirmedPayload(**payload_dict)
     # Simulate processing crash for DLQ demonstration
     if "dlq" in payload.patientName.lower() or "error" in payload.patientName.lower():
         raise RuntimeError(f"Simulated processing crash for patient: {payload.patientName}!")

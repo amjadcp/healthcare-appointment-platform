@@ -23,4 +23,5 @@ public interface AppointmentService {
     Page<AppointmentResponse> getAppointments(Pageable pageable);
     Page<ProcessedEvent> getProcessedEvents(Pageable pageable);
     Page<AppointmentLogResponse> getAppointmentLogs(Pageable pageable);
+    String getCurrentUserOrganizationSlug();
 }

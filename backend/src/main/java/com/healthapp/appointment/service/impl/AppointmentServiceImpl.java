@@ -376,8 +376,8 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new UnauthorizedException("Only administrators can view audit logs");
         }
 
-        // TODO: Filter by organization instead of fetching all logs
-        return logRepository.findAll(pageable).map(log -> AppointmentLogResponse.builder()
+        UUID orgId = user.getOrganization().getId();
+        return logRepository.findByAppointmentDoctorOrganizationId(orgId, pageable).map(log -> AppointmentLogResponse.builder()
                 .id(log.getId())
                 .appointmentId(log.getAppointment().getId())
                 .patientName(log.getAppointment().getPatientName())
@@ -386,6 +386,12 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .changedBy(log.getChangedBy())
                 .changedAt(log.getChangedAt())
                 .build());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String getCurrentUserOrganizationSlug() {
+        return getCurrentUserOrThrow().getOrganization().getSlug();
     }
 
     private User getCurrentUserOrThrow() {
